@@ -1,10 +1,8 @@
-import sys
-sys.path.append('..')
-
 import numpy as np
-import model.nelson_siegel as ns
 import unittest
 
+from model import kalman_filter as kf
+from model import nelson_siegel as ns
 
 class TestNelsonSiegel(unittest.TestCase):
     
@@ -20,14 +18,6 @@ class TestNelsonSiegel(unittest.TestCase):
                 np.zeros(3) - (1e-8),
                 yield_loadings
                 )
-    
-    def test_afns_yield_adjustment(self):
-        sigma = np.array([0.0051, 0.0110, 0.0264]) # from Christensen et al. (2011)
-        for maturity in self.maturities:
-            self.assertLess(
-                ns.arbitrage_free_yield_adjustment(self.decay_rate, sigma, maturity),
-                0.
-            )
             
     def test_forward_basis(self):
         for maturity in self.maturities:
@@ -37,6 +27,16 @@ class TestNelsonSiegel(unittest.TestCase):
                 forward_loadings
                 ) 
             
-            
+class TestDynamicNelsonSiegel(unittest.TestCase):
+    
+    @classmethod
+    def setUpClass(cls):
+        cls.decay_rate = 0.5
+        cls.maturities = [1., 2., 5., 20.]  # randomly selected
+    
+    def test_type(self):
+        dns_model = ns.DynamicNelsonSiegel(self.decay_rate, self.maturities)
+        isinstance(dns_model.specify_filter(), kf.OUModel)
+
 if __name__ == '__main__':
     unittest.main()

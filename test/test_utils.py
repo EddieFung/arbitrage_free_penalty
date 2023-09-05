@@ -1,10 +1,7 @@
-import sys
-sys.path.append('..')
-
 import numpy as np
-import model.utils as utils
 import unittest
 
+from model import utils
 
 class TestGrids(unittest.TestCase):
     @classmethod
