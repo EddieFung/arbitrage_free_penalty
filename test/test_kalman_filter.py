@@ -94,6 +94,41 @@ class TestBaseLGSSM(unittest.TestCase):
             P[-1, :]
         )
         
+class TestOUTransitionModel(unittest.TestCase):
+    
+    @classmethod
+    def setUpClass(cls):
+        np.random.seed(0)
+        
+        cls.dim_x = 3
+        cls.dim_y = 5
+        cls.delta_t = 1/250
+        
+        cls.B = np.random.normal(size=cls.dim_y) * 0.2
+        cls.H = np.random.normal(size=(cls.dim_y, cls.dim_x)) * 0.5
+        
+        cls.model = kf.OUTransitionModel(cls.delta_t)   
+        
+    def test_initialize(self):
+        np.random.seed(3)
+        
+        df = np.random.normal(size=(10, self.dim_y))
+        self.model._initialize(df, self.H)
+        
+        np.testing.assert_equal(len(self.model._log_k), 3)
+        np.testing.assert_equal(len(self.model._theta), 3) 
+        np.testing.assert_equal(len(self.model._log_sigma), 3) 
+        np.testing.assert_equal(len(self.model._log_obs_sd), self.dim_y) 
+        
+    def test_specify_transition(self):
+        a, b, c = self.model._specify_transition([
+            self.model._log_k, self.model._theta, self.model._log_sigma, np.zeros(self.dim_y)
+        ])
+        np.testing.assert_equal(len(a), 3)
+        np.testing.assert_equal(len(b), self.dim_y)
+        np.testing.assert_equal(len(c), 2)
+        
+        
 class TestOUModel(unittest.TestCase):
     
     @classmethod
