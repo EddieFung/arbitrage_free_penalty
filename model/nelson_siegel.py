@@ -3,7 +3,6 @@ import numpy as np
 import jax.numpy as jnp
 
 from model import kalman_filter as kf
-# import kalman_filter as kf
 
 
 def yield_basis(decay_rate: float, maturity: float):
@@ -23,8 +22,8 @@ def yield_basis(decay_rate: float, maturity: float):
 
     """
     if maturity == 0.:
-        return np.array([1., 1., 0.])
-    return np.array([
+        return jnp.array([1., 1., 0.])
+    return jnp.array([
         1,
         (1. - jnp.exp(-decay_rate * maturity)) / decay_rate / maturity,
         (1. - jnp.exp(-decay_rate * maturity)) / decay_rate / maturity - \

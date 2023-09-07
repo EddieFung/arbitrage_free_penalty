@@ -8,10 +8,10 @@ from model import kalman_filter as kf
 from model import nelson_siegel as ns
 
 def arbitrage_free_yield_adjustment(
-        decay_rate: float, 
-        sigma: float, 
-        maturity: float
-        ):
+    decay_rate: float, 
+    sigma: float, 
+    maturity: float
+):
     """The yield adjustment term of independent 3-factor AFNS.
 
     Parameters
@@ -30,7 +30,7 @@ def arbitrage_free_yield_adjustment(
 
     """
     if maturity == 0.:
-        return np.array(0.)
+        return jnp.array(0.)
     return - (sigma[0] * maturity)**2 / 6. - sigma[1]**2 * (
         0.5 / decay_rate**2 - 
         (1 - jnp.exp(-decay_rate * maturity)) / (decay_rate**3 * maturity) +
@@ -83,10 +83,10 @@ class AFNS(kf.OUTransitionModel):
         log_rate, log_k, theta, log_sigma, log_obs_sd = pars
         (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0) = super()._specify_transition([log_k, theta, log_sigma, log_obs_sd])
         
-        hat_B = np.array([arbitrage_free_yield_adjustment(
+        hat_B = jnp.array([arbitrage_free_yield_adjustment(
             jnp.exp(log_rate), jnp.exp(log_sigma), m
         ) for m in self.maturities])
-        hat_H = np.array([ns.yield_basis(jnp.exp(log_rate), m) for m in self.maturities])
+        hat_H = jnp.array([ns.yield_basis(jnp.exp(log_rate), m) for m in self.maturities])
         
         return kf.BaseLGSSM(hat_A, hat_F, hat_Q, hat_B, hat_H, hat_R, hat_m0, hat_P0)
     
@@ -105,7 +105,12 @@ class AFNS(kf.OUTransitionModel):
         hat_H = np.array([ns.yield_basis(jnp.exp(self._log_rate), m) for m in self.maturities])
         super()._initialize(df, hat_H)
 
-    def inference(self, df: np.ndarray, iterations: int = 3) -> None:
+    def inference(
+        self, 
+        df: np.ndarray, 
+        iterations: int = 3, 
+        initialized: bool = False
+    ) -> None:
         """Perform inference on df.
         
         Update parameters using Adam optimizer on -ve log-likelihood.
@@ -126,7 +131,8 @@ class AFNS(kf.OUTransitionModel):
             model = self._specify_filter(pars)
             return -jnp.mean(model.forward_filter(df)[2])
         
-        self.initialize(df)
+        if not initialized:
+            self.initialize(df)
         pars = [self._log_rate, self._log_k, self._theta, self._log_sigma, self._log_obs_sd]
         pars = super()._inference(pars, df, neg_log_like, iterations)
         self._log_rate, self._log_k, self._theta, self._log_sigma, self._log_obs_sd = pars

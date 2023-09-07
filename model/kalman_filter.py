@@ -339,7 +339,12 @@ class OUModel(OUTransitionModel):
         """
         super()._initialize(df, self.H)
 
-    def inference(self, df: np.ndarray, iterations: int = 3) -> None:
+    def inference(
+        self, 
+        df: np.ndarray, 
+        iterations: int = 3, 
+        initialized: bool = False
+    ) -> None:
         """Perform inference on df.
         
         Update parameters using Adam optimizer on -ve log-likelihood.
@@ -350,6 +355,8 @@ class OUModel(OUTransitionModel):
             Data, shape = [dim_t, dim_y].
         iterations : int, optional
             Number of iterations of Adam optimizer. The default is 3.
+        initialized : bool, optional
+            Whether parameters have been initialized. The default is False.
 
         Returns
         -------
@@ -360,7 +367,8 @@ class OUModel(OUTransitionModel):
             model = self._specify_filter(pars)
             return -jnp.mean(model.forward_filter(df)[2])
         
-        self.initialize(df)
+        if not initialized:
+            self.initialize(df)
         pars = [self._log_k, self._theta, self._log_sigma, self._log_obs_sd]
         pars = super()._inference(pars, df, neg_log_like, iterations)
         self._log_k, self._theta, self._log_sigma, self._log_obs_sd = pars
