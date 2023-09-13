@@ -1,5 +1,4 @@
-from typing import List, Sequence
-from collections.abc import Callable
+from typing import List, Sequence, Callable
 
 import numpy as np
 
@@ -53,8 +52,7 @@ class AFPM:
     def initialize_ssm(self, df: np.ndarray):
         self.ou_model.initialize(df)
     
-    def initialize_nn(self):
-        fine_grid = 1000
+    def initialize_nn(self, fine_grid: int = 1000, iterations: int = 10000):
         maturities = np.linspace(
             np.max([self.start, 1/12]), np.min([self.start, 30]), fine_grid
         ).reshape((fine_grid,1))
@@ -78,7 +76,7 @@ class AFPM:
         
         opt_init, opt_update, get_params = optimizers.adam(1e-3)
         opt_state = opt_init(self.nn.weights)
-        for i in range(10000):
+        for i in range(iterations):
             opt_state = initialization_fit(i, opt_state)
         
         self.nn.pars = get_params(opt_state)
@@ -89,8 +87,23 @@ class AFPM:
     
     def inference(
         self,
-        sampling_method: Callable,
-        lpdf: Callable
+        df: np.ndarray,
+        sampling_method: Callable[[int], np.ndarray],
+        lpdf: Callable,
+        no_samples: int,
+        iterations: int,
+        penalty: float,
+        fixed_volatility: bool = True
     ):
-        pass
+        self.initialize(df)
+        
+        sobolev_weights_m = jnp.log(jnp.diff(self.maturities, prepend=0)) - \
+            self.maturities
+        
+        samples = sampling_method(no_samples)
+        sobolev_weights_b = - jnp.sum(samples**2, 1)**0.5 - lpdf(samples) - \
+            jnp.log(no_samples)
+        
+    
+    
     
