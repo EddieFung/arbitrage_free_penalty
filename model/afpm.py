@@ -4,6 +4,8 @@ import numpy as np
 
 import jax
 import jax.numpy as jnp
+import jax.scipy as jsc
+import flax.core
 import flax.linen as nn
 from jax import value_and_grad
 from jax.example_libraries import optimizers
@@ -95,15 +97,92 @@ class AFPM:
         penalty: float,
         fixed_volatility: bool = True
     ):
+        @jax.jit
+        def loss(
+            w: flax.core.variables,
+            betas: np.ndarray,
+            sobolev_weights_b: np.array,
+            sobolev_weights_m: np.array,
+            covariance_mat: np.ndarray,
+            penalty: float
+        ):
+            # distance loss
+            log_weights = sobolev_weights_b[np.newaxis, :] + \
+                sobolev_weights_m[:, np.newaxis]  # shape = [m, beta_size]
+            est_basis = self.nn.apply(w, self.maturities[:, np.newaxis])  # shape=[m, d+1]
+            distance_loss = jnp.exp(jsc.special.logsumexp(
+                log_weights + 2 * jnp.log(est_basis[:, [0]] + \
+                jnp.matmul(self.reference_basis - est_basis[:, 1:], betas.T))
+            ))
+        
+            # arbitrage-free loss
+            integrated_basis = self.grids.integrate( 
+                lambda x: self.nn.apply(w, x[:, np.newaxis])
+            )[:, 1:] # intercept term is ignored, shape = [m, d]
+            full_grids_basis = - self.nn.apply(w, np.zeros((1,1))) + \
+                self.nn.apply(w, self.grids.grids[:, np.newaxis])
+            grids_basis = full_grids_basis[:, 1:]  # shape = [m, d]
+            grids_int_basis = full_grids_basis[:, [0]]  # shape = [m, 1]
+            
+            # risk-neutral drift, shape=[d, d]
+            neutral_drift = jnp.linalg.lstsq(integrated_basis, grids_basis)[0]
+        
+            AF_loss_1 = (grids_int_basis + 0.5 * jnp.sum(
+                jnp.matmul(integrated_basis, covariance_mat) * \
+                    integrated_basis, 1, keepdims=True
+            ))**2
+            AF_loss_2 = jnp.sum(
+                (grids_basis - jnp.matmul(integrated_basis, neutral_drift))**2,
+                1, keepdims=True
+            )
+            
+            AF_loss = AF_loss_1 + AF_loss_2
+        
+            integrated_AF_loss = jnp.exp(1 / penalty * jsc.special.logsumexp(
+                jnp.log(self.grids.stepsize) - self.grids.grids + \
+                    penalty * jnp.log(AF_loss)
+            ))
+            return distance_loss + integrated_AF_loss
+        
+        @jax.jit
+        def fit(
+            step: int,
+            _opt_state, 
+            betas: np.ndarray,
+            sobolev_weights_b: np.array,
+            sobolev_weights_m: np.array, 
+            covariance_mat: np.ndarray,
+            penalty: float
+        ):
+            value, grads = value_and_grad(loss)(
+                w=get_params(_opt_state), 
+                betas=betas, 
+                sobolev_weights_b=sobolev_weights_b,
+                sobolev_weights_m=sobolev_weights_m,
+                covariance_mat=covariance_mat,
+                penalty=penalty
+            )
+            _opt_state = opt_update(step, grads, _opt_state)
+            return _opt_state
+        
         self.initialize(df)
-        
-        sobolev_weights_m = jnp.log(jnp.diff(self.maturities, prepend=0)) - \
+        opt_init, opt_update, get_params = optimizers.adam(1e-3)
+        opt_state = opt_init(self.nn_pars)
+        weights_m = jnp.log(jnp.diff(self.maturities, prepend=0)) - \
             self.maturities
-        
+            
         samples = sampling_method(no_samples)
-        sobolev_weights_b = - jnp.sum(samples**2, 1)**0.5 - lpdf(samples) - \
+        weights_b = - jnp.sum(samples**2, 1)**0.5 - lpdf(samples) - \
             jnp.log(no_samples)
-        
-    
-    
-    
+        for i in range(iterations):
+            opt_state = fit(
+                step=i,
+                _opt_state=opt_state, 
+                betas=samples,
+                sobolev_weights_b=weights_b,
+                sobolev_weights_m=weights_m, 
+                covariance_mat=self.ou_model.get_transiton_covariance_matrix(),
+                penalty=penalty
+            )
+
+        self.nn_pars = get_params(opt_state)

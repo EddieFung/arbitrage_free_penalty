@@ -156,6 +156,12 @@ class OUTransitionModel:
         self._log_sigma = np.array([-0.5, -0.5, -0.5])
         self._log_obs_sd = None
         
+    def get_transition_covariance_matrix(self) -> np.ndarray:
+        k = jnp.exp(self._log_k)
+        transition_mat_diag = jnp.exp(-k * self.delta_t)
+        return jnp.diag(jnp.exp(2 * self._log_sigma) * \
+                        (1 - transition_mat_diag**2) / (2*k))
+
     def _specify_transition(self, pars: List) -> Tuple:
         """Hidden method to specify the components of the LGSSM.
         
