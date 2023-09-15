@@ -74,7 +74,7 @@ class DynamicNelsonSiegel(kf.OUModel):
         H : np.ndarray
             Observation matrix, shape = [dim_y, dim_x].
         maturities : List[float]
-            Time-to-maturity.
+            All Time-to-maturity of interest.
         delta_t : float, optional
             Time span between two observations. The default is 1/250.
 

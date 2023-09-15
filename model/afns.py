@@ -7,6 +7,7 @@ import jax.numpy as jnp
 from model import kalman_filter as kf
 from model import nelson_siegel as ns
 
+
 def arbitrage_free_yield_adjustment(
     decay_rate: float, 
     sigma: float, 
@@ -27,7 +28,6 @@ def arbitrage_free_yield_adjustment(
     ------
     float
         yield adjustment term.
-
     """
     if maturity == 0.:
         return jnp.array(0.)
@@ -44,12 +44,26 @@ def arbitrage_free_yield_adjustment(
     )
         
 class AFNS(kf.OUTransitionModel):
-    
+    """Arbitrage-free Nelson-Siegel yield model from Christensen et al. (2011).
+    """
     def __init__(
         self, 
         maturities: List[float],
         delta_t: float = 1/250
     ) -> None:
+        """Instantiate the class.
+        
+        Parameters
+        ----------
+        maturities : List[float]
+            All Time-to-maturity of interest.
+        delta_t : float, optional
+            Time span between two observations. The default is 1/250.
+
+        Returns
+        -------
+        None
+        """
         super().__init__(delta_t=delta_t)
         self._log_rate = jnp.log(0.713131)
         self.maturities = maturities
@@ -60,11 +74,12 @@ class AFNS(kf.OUTransitionModel):
 
         Returns
         -------
-        BaseLGSSM
+        kf.BaseLGSSM
             The LGSSM. 
         """
         return self._specify_filter([
-            self._log_rate, self._log_k, self._theta, self._log_sigma, self._log_obs_sd
+            self._log_rate, self._log_k, self._theta, self._log_sigma, 
+            self._log_obs_sd
         ])
         
     def _specify_filter(self, pars: List) -> kf.BaseLGSSM:
@@ -77,18 +92,23 @@ class AFNS(kf.OUTransitionModel):
 
         Returns
         -------
-        BaseLGSSM
+        kf.BaseLGSSM
             The LGSSM. 
         """
         log_rate, log_k, theta, log_sigma, log_obs_sd = pars
-        (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0) = super()._specify_transition([log_k, theta, log_sigma, log_obs_sd])
+        (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0) = super()._specify_transition([
+            log_k, theta, log_sigma, log_obs_sd
+        ])
         
         hat_B = jnp.array([arbitrage_free_yield_adjustment(
             jnp.exp(log_rate), jnp.exp(log_sigma), m
         ) for m in self.maturities])
-        hat_H = jnp.array([ns.yield_basis(jnp.exp(log_rate), m) for m in self.maturities])
+        hat_H = jnp.array([ns.yield_basis(jnp.exp(log_rate), m) 
+                           for m in self.maturities])
         
-        return kf.BaseLGSSM(hat_A, hat_F, hat_Q, hat_B, hat_H, hat_R, hat_m0, hat_P0)
+        return kf.BaseLGSSM(
+            hat_A, hat_F, hat_Q, hat_B, hat_H, hat_R, hat_m0, hat_P0
+        )
     
     def initialize(self, df: np.ndarray) -> None:
         """Initialize parameters given df.
@@ -121,6 +141,8 @@ class AFNS(kf.OUTransitionModel):
             Data, shape = [dim_t, dim_y]
         iterations : int, optional
             Number of iterations of Adam optimizer. The default is 3.
+        initialized : bool, optional
+            Whether parameters have been initialized. The default is False.
 
         Returns
         -------
