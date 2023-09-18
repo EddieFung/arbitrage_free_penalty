@@ -104,7 +104,9 @@ class BaseLGSSM:
         P = P - kalman_gain @ S @ kalman_gain.T
         return (m, P, likeli), (m, P, likeli)
 
-    def forward_filter(self, df: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.array]:
+    def forward_filter(
+        self, df: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray, np.array]:
         """Perform Kalman filter on df.
 
         Parameters
@@ -120,7 +122,9 @@ class BaseLGSSM:
             normalized log-likelihood, shape = [dim_t]
 
         """
-        _, (fms, fPs, likeli) = scan(self.one_step_filter, (self.m0, self.P0, 0.), df)
+        _, (fms, fPs, likeli) = scan(
+            self.one_step_filter, (self.m0, self.P0, 0.), df
+        )
         return fms, fPs, likeli - self.dim_y / 2 * jnp.log(2 * jnp.pi)
 
     
@@ -135,8 +139,7 @@ class OUTransitionModel:
     Var(noises) = \int^delta_0 e^{-K s} Sigma Sigma' e^{-K s} ds
     """
     def __init__(
-        self, 
-        delta_t: float = 1/250
+        self, delta_t: float = 1/250
     ) -> None:
         """Instantiate the class.
 
@@ -188,7 +191,8 @@ class OUTransitionModel:
         transition_mat_diag = jnp.exp(-jnp.exp(log_k) * self.delta_t)
         hat_A = theta * (1 - transition_mat_diag)
         hat_F = jnp.diag(transition_mat_diag)
-        hat_Q = jnp.diag(jnp.exp(2 * log_sigma - log_k) * (1 - transition_mat_diag**2) / 2)
+        hat_Q = jnp.diag(jnp.exp(2 * log_sigma - log_k) * \
+                         (1 - transition_mat_diag**2) / 2)
         hat_R = jnp.diag(jnp.exp(2 * log_obs_sd))
         hat_m0 = theta
         hat_P0 = jnp.diag(jnp.exp(2 * log_sigma - log_k) / 2)
@@ -223,7 +227,8 @@ class OUTransitionModel:
         self._log_k = jnp.log(k)
   
         # initialized sigma
-        transition_var = jnp.var(states[1:,] - states[:-1,] * transition_mat_diag, 0)
+        transition_var = jnp.var(states[1:,] - \
+                                 states[:-1,] * transition_mat_diag, 0)
         self._log_sigma = 0.5 * jnp.log(
             transition_var / (1. - transition_mat_diag**2) * 2. * k
         )  # shape = [3]
@@ -243,7 +248,7 @@ class OUTransitionModel:
             df: np.ndarray, 
             loss: Callable, 
             iterations: int = 3
-    ) -> None:
+    ) -> Tuple:
         """Perform inference on df.
         
         Update parameters using Adam optimizer on loss (-ve log-likelihood).
@@ -261,9 +266,9 @@ class OUTransitionModel:
 
         Returns
         -------
-        None
+        Tuple
+            Parameter values.
         """
-        self.initialize(df)
         opt_init, opt_update, get_params = optimizers.adam(1e-3)
         opt_state = opt_init(pars)
 

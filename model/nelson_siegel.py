@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from model import kalman_filter as kf
 
 
-def yield_basis(decay_rate: float, maturity: float):
+def yield_basis(decay_rate: float, maturity: float) -> np.array:
     """The three Nelson-Siegel basis functions for Yields.
 
     Parameters
@@ -19,7 +19,6 @@ def yield_basis(decay_rate: float, maturity: float):
     -------
     np.array
         Three basis functions for yields.
-
     """
     if maturity == 0.:
         return jnp.array([1., 1., 0.])
@@ -30,7 +29,7 @@ def yield_basis(decay_rate: float, maturity: float):
             jnp.exp(-decay_rate * maturity)
     ])
             
-def forward_basis(decay_rate: float, maturity: float):
+def forward_basis(decay_rate: float, maturity: float) -> np.array:
     """The three Nelson-Siegel basis functions for forward rates.
 
     Parameters
@@ -44,7 +43,6 @@ def forward_basis(decay_rate: float, maturity: float):
     -------
     np.array
         Three basis functions for forward rates.
-
     """
     return np.array([
         1,
