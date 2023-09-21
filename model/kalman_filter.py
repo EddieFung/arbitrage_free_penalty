@@ -1,4 +1,4 @@
-from typing import Tuple, List, Callable
+from typing import Tuple, Callable
 import numpy as np
 
 import jax
@@ -133,18 +133,21 @@ class OUTransitionModel:
 
     Only the transition equation is fixed as the independent OU process. The 
     observation matrix and intercept are unspecified. This is a base class for
-    other models.
+    other models. Also, the off-diagonal correlation in Sigma is assumed 
+    uniform and positive.
     
     x_{t+1} = theta*(I-e^{-K delta}) + e^{-K delta} x_t + noises, 
     Var(noises) = \int^delta_0 e^{-K s} Sigma Sigma' e^{-K s} ds
     """
     def __init__(
-        self, delta_t: float = 1/250
+        self, dim_x: int = 5, delta_t: float = 1/250
     ) -> None:
         """Instantiate the class.
 
         Parameters
         ----------
+        dim_x: int, optional
+            Dimension of the latent factors. The default is 5.
         delta_t : float, optional
             Time span between two observations. The default is 1/250.
 
@@ -152,51 +155,82 @@ class OUTransitionModel:
         -------
         None
         """
+        self.dim_x = dim_x
         self.delta_t = delta_t
         
-        self._log_k = np.array([2., 2., 2.])
-        self._theta = np.array([0., 2., 1.])
-        self._log_sigma = np.array([-0.5, -0.5, -0.5])
+        self._k_p = np.eye(self.dim_x)
+        self._theta_p = np.zeros(self.dim_x)
+        self._log_diag = - np.ones(self.dim_x) / 2.
+        self._off_diag = np.zeros(int(self.dim_x * (self.dim_x - 1) / 2))
         self._log_obs_sd = None
         
-    def get_transition_covariance_matrix(self) -> np.ndarray:
-        """Get transition covariance matrix.
-        
+    def _sepcify_continuous_dynamic(self, pars: Tuple) -> Tuple:
+        """Hidden method to specify components in continuous-time dynamic.
+
+        Parameters
+        ----------
+        pars : Tuple
+            Parameter values: (k_p, log_diag, off_diag).
+
         Returns
         -------
-        np.ndarray
-            Transition covariance matrix.
+        Tuple
+            Square-root of the continuous-time Sigma, shape = dim_x, dim_x];
+            Eigenvalues of k_p, shape = [dim_x],
+            Eigenvectors of k_p, shape = dim_x, dim_x].
         """
-        k = jnp.exp(self._log_k)
-        transition_mat_diag = jnp.exp(-k * self.delta_t)
-        return jnp.diag(jnp.exp(2 * self._log_sigma) * \
-                        (1 - transition_mat_diag**2) / (2*k))
-
-    def _specify_transition(self, pars: List) -> Tuple:
-        """Hidden method to specify the components of the LGSSM.
+        k_p, log_diag, off_diag = pars 
+        
+        # Estimate the square-root matrix
+        sqrt_mat = jnp.zeros([self.dim_x, self.dim_x])
+        sqrt_mat = sqrt_mat.at[jnp.tril_indices(self.dim_x, -1)].set(off_diag)
+        sqrt_mat += jnp.diag(jnp.exp(log_diag))
+        
+        # eigendecomposition of k_p
+        eig_val, eig_vector = jax.jit(jnp.linalg.eig)(k_p)  
+        
+        return sqrt_mat, eig_val, eig_vector
+    
+    def _sepcify_discrete_dynamic(self, pars: Tuple) -> Tuple:
+        """Hidden method to specify components in discrete-time dynamic.
+        
+        Transition equation, initialization equation, and the observation
+        covariance matrix are specified. Observation intercept and matrix are 
+        left unspecified.
         
         Parameters
         ----------
-        pars : List
-            Parameter values.
+        pars : Tuple
+            Parameter values: (k_p, theta_p, log_diag, off_diag, log_obs_sd).
 
         Returns
         -------
         Tuple
             Transition intercept, matrix, covariance matrix;
-            Observation covariance matrix;
+            observation covariance matrix;
             initial distribution mean, covariance matrix.
         """
-        log_k, theta, log_sigma, log_obs_sd = pars
-        transition_mat_diag = jnp.exp(-jnp.exp(log_k) * self.delta_t)
-        hat_A = theta * (1 - transition_mat_diag)
-        hat_F = jnp.diag(transition_mat_diag)
-        hat_Q = jnp.diag(jnp.exp(2 * log_sigma - log_k) * \
-                         (1 - transition_mat_diag**2) / 2)
-        hat_R = jnp.diag(jnp.exp(2 * log_obs_sd))
-        hat_m0 = theta
-        hat_P0 = jnp.diag(jnp.exp(2 * log_sigma - log_k) / 2)
+        k_p, theta_p, log_diag, off_diag, log_obs_sd = pars
+        sqrt_mat, eig_val, eig_vector = self._sepcify_continuous_dynamic(
+            (k_p, log_diag, off_diag)
+        )
         
+        hat_F = jnp.matmul(
+            jnp.matmul(eig_vector.T, jnp.diag(jnp.exp(- self.delta_t * eig_val))), 
+            eig_vector
+        )
+        hat_A = theta_p * (jnp.eye(self.dim_x) - hat_F)
+        hat_R = jnp.diag(jnp.exp(2 * log_obs_sd))
+        hat_m0 = theta_p
+        
+        # shape = [dim_x, dim_x] 
+        sum_eig_val = eig_val[:, jnp.newaxis] + eig_val[jnp.newaxis, :]
+        cov_mat = jnp.matmul(sqrt_mat, sqrt_mat.T)
+        hat_P0 = jnp.matmul(
+            jnp.matmul(eig_vector.T, cov_mat), eig_vector
+        ) / sum_eig_val
+        hat_Q = hat_P0 * \
+            (1 - jnp.exp(-self.delta_t * sum_eig_val))
         return (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0)
     
     def _initialize(self, df: np.ndarray, H: np.ndarray) -> None:
@@ -213,10 +247,10 @@ class OUTransitionModel:
         -------
         None
         """
-        # initialized latent states
+        # initialize latent states
         states = jnp.linalg.lstsq(H, df.T)[0].T  # shape = [dim_t, dim_x]
   
-        # initialized k while ensuring stationarity
+        # initialize k while ensuring stationarity
         non_stationary_transition_mat_diag = jnp.diag(
             jnp.linalg.lstsq(states[:-1,], states[1:,])[0]
         )  # shape = [dim_x]
@@ -224,16 +258,16 @@ class OUTransitionModel:
             np.minimum(non_stationary_transition_mat_diag, 0.99), 0.01
         )
         k = - jnp.log(transition_mat_diag) / self.delta_t  # shape = [3]
-        self._log_k = jnp.log(k)
+        self._k_p = jnp.diag(k)
   
-        # initialized sigma
+        # initialize sigma, assume diagonal cov
         transition_var = jnp.var(states[1:,] - \
                                  states[:-1,] * transition_mat_diag, 0)
-        self._log_sigma = 0.5 * jnp.log(
+        self._log_diag = 0.5 * jnp.log(
             transition_var / (1. - transition_mat_diag**2) * 2. * k
-        )  # shape = [3]
+        )  # shape = [dim_x]
   
-        self._theta = jnp.mean(states, 0)  # shape = [dim_x]
+        self._theta_p = jnp.mean(states, 0)  # shape = [dim_x]
   
         # two initializers on the observation std:
         # 1. the sample std, which is an upper bound
@@ -243,11 +277,11 @@ class OUTransitionModel:
         self._log_obs_sd = (obs_sd_est_1 + obs_sd_est_2) / 2.
         
     def _inference(
-            self, 
-            pars: List, 
-            df: np.ndarray, 
-            loss: Callable, 
-            iterations: int = 3
+        self, 
+        pars: Tuple, 
+        df: np.ndarray, 
+        loss: Callable, 
+        iterations: int = 3
     ) -> Tuple:
         """Perform inference on df.
         
@@ -255,8 +289,8 @@ class OUTransitionModel:
 
         Parameters
         ----------
-        pars : List
-            Trainable parameters.
+        pars : Tuple
+            Trainable parameters.=
         df : np.ndarray
             Data, shape = [dim_t, dim_y].
         loss : Callable
@@ -267,7 +301,7 @@ class OUTransitionModel:
         Returns
         -------
         Tuple
-            Parameter values.
+            Updated parameter values.
         """
         opt_init, opt_update, get_params = optimizers.adam(1e-3)
         opt_state = opt_init(pars)
@@ -309,10 +343,10 @@ class OUModel(OUTransitionModel):
         -------
         None
         """
-        super().__init__(delta_t)
+        super().__init__(dim_x=H.shape[1], delta_t=delta_t)
         self.B = B
         self.H = H
-        self._log_obs_sd = np.zeros(len(B))
+        self._log_obs_sd = - np.ones(len(B))
         
     def specify_filter(self) -> BaseLGSSM:
         """Specify the LGSSM given the parameter values. 
@@ -323,15 +357,16 @@ class OUModel(OUTransitionModel):
             The LGSSM. 
         """
         return self._specify_filter([
-            self._log_k, self._theta, self._log_sigma, self._log_obs_sd
+            self._k_p, self._theta_p, 
+            self._log_diag, self._off_diag, self._log_obs_sd
         ])
         
-    def _specify_filter(self, pars: List) -> BaseLGSSM:
+    def _specify_filter(self, pars: Tuple) -> BaseLGSSM:
         """Hidden method to specify the LGSSM.
         
         Parameters
         ----------
-        pars : List
+        pars : Tuple
             Parameter values.
 
         Returns
@@ -339,7 +374,7 @@ class OUModel(OUTransitionModel):
         BaseLGSSM
             The LGSSM. 
         """
-        (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0) = super()._specify_transition(pars)
+        (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0) = super()._sepcify_discrete_dynamic(pars)
         return BaseLGSSM(hat_A, hat_F, hat_Q, self.B, self.H, hat_R, hat_m0, hat_P0)
     
     def initialize(self, df: np.ndarray) -> None:
@@ -386,6 +421,8 @@ class OUModel(OUTransitionModel):
         
         if not initialized:
             self.initialize(df)
-        pars = [self._log_k, self._theta, self._log_sigma, self._log_obs_sd]
+        pars = [self._log_k, self._theta, 
+                self._log_sigma, self._log_corr, self._log_obs_sd]
         pars = super()._inference(pars, df, neg_log_like, iterations)
-        self._log_k, self._theta, self._log_sigma, self._log_obs_sd = pars
+        (self._log_k, self._theta,
+         self._log_sigma, self._log_corr, self._log_obs_sd) = pars

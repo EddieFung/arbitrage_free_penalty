@@ -107,28 +107,48 @@ class TestOUTransitionModel(unittest.TestCase):
         cls.B = np.random.normal(size=cls.dim_y) * 0.2
         cls.H = np.random.normal(size=(cls.dim_y, cls.dim_x)) * 0.5
         
-        cls.model = kf.OUTransitionModel(cls.delta_t)   
-        
+        cls.model = kf.OUTransitionModel(cls.dim_x, cls.delta_t)   
+
     def test_initialize(self):
         np.random.seed(3)
         
         df = np.random.normal(size=(10, self.dim_y))
         self.model._initialize(df, self.H)
         
-        np.testing.assert_equal(len(self.model._log_k), 3)
-        np.testing.assert_equal(len(self.model._theta), 3) 
-        np.testing.assert_equal(len(self.model._log_sigma), 3) 
+        np.testing.assert_equal(self.model._k_p.shape, (self.dim_x, self.dim_x))
+        np.testing.assert_equal(len(self.model._theta_p), self.dim_x) 
+        np.testing.assert_equal(len(self.model._log_diag), self.dim_x) 
+        np.testing.assert_equal(
+            len(self.model._off_diag), 
+            int(self.dim_x * (self.dim_x - 1) / 2)
+        ) 
         np.testing.assert_equal(len(self.model._log_obs_sd), self.dim_y) 
-        
-    def test_specify_transition(self):
-        a, b, c = self.model._specify_transition([
-            self.model._log_k, self.model._theta, self.model._log_sigma, np.zeros(self.dim_y)
+
+    def test_sepcify_continuous_dynamic(self):
+        sqrt_mat, eig_val, eig_vector = self.model._sepcify_continuous_dynamic([
+            self.model._k_p, self.model._log_diag, self.model._off_diag,
         ])
-        np.testing.assert_equal(len(a), 3)
-        np.testing.assert_equal(len(b), self.dim_y)
-        np.testing.assert_equal(len(c), 2)
+        np.testing.assert_equal(sqrt_mat.shape, (self.dim_x, self.dim_x))
+        np.testing.assert_equal(len(eig_val), self.dim_x)
+        np.testing.assert_equal(eig_vector.shape, (self.dim_x, self.dim_x))
         
+    def test_sepcify_discrete_dynamic(self):
+        self.model._log_obs_sd = np.zeros(self.dim_y)
+        (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0) = self.model._sepcify_discrete_dynamic([
+            self.model._k_p, self.model._theta_p, 
+            self.model._log_diag, self.model._off_diag,
+            self.model._log_obs_sd
+        ])
+        np.testing.assert_equal(len(hat_A), self.dim_x)
+        np.testing.assert_equal(hat_F.shape, (self.dim_x, self.dim_x))
+        np.testing.assert_equal(hat_Q.shape, (self.dim_x, self.dim_x))
         
+        np.testing.assert_equal(hat_R.shape, (self.dim_y, self.dim_y))
+        
+        np.testing.assert_equal(len(hat_m0), self.dim_x)
+        np.testing.assert_equal(hat_P0.shape, (self.dim_x, self.dim_x))
+        
+      
 class TestOUModel(unittest.TestCase):
     
     @classmethod
@@ -152,10 +172,14 @@ class TestOUModel(unittest.TestCase):
         df = np.random.normal(size=(10, self.dim_y))
         self.model.initialize(df)
         
-        np.testing.assert_equal(len(self.model._log_k), 3)
-        np.testing.assert_equal(len(self.model._theta), 3) 
-        np.testing.assert_equal(len(self.model._log_sigma), 3) 
+        np.testing.assert_equal(self.model._k_p.shape, (self.dim_x, self.dim_x))
+        np.testing.assert_equal(len(self.model._theta_p), self.dim_x) 
+        np.testing.assert_equal(len(self.model._log_diag), self.dim_x) 
+        np.testing.assert_equal(
+            len(self.model._off_diag), 
+            int(self.dim_x * (self.dim_x - 1) / 2)
+        ) 
         np.testing.assert_equal(len(self.model._log_obs_sd), self.dim_y) 
-        
+
 if __name__ == '__main__':
     unittest.main()
