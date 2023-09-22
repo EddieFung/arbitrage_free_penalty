@@ -1,53 +1,61 @@
-from typing import List
+from typing import Tuple, List
 import numpy as np
 import jax.numpy as jnp
 
 from model import kalman_filter as kf
 
 
-def yield_basis(decay_rate: float, maturity: float) -> np.array:
-    """The three Nelson-Siegel basis functions for Yields.
+def yield_basis(decay_rates: Tuple[float, float], maturity: float) -> np.array:
+    """The five Nelson-Siegel basis functions for Yields.
 
     Parameters
     ----------
-    decay_rate : float
-        lambda.
+    decay_rates : Tuple[float, float]
+        The two decay rates.
     maturity : float
-        time-to-maturity.
+        Time-to-maturity.
 
     Returns
     -------
     np.array
-        Three basis functions for yields.
+        Five basis functions for yields.
     """
     if maturity == 0.:
-        return jnp.array([1., 1., 0.])
+        return jnp.array([1., 1., 0., 1., 0.])
     return jnp.array([
         1,
-        (1. - jnp.exp(-decay_rate * maturity)) / decay_rate / maturity,
-        (1. - jnp.exp(-decay_rate * maturity)) / decay_rate / maturity - \
-            jnp.exp(-decay_rate * maturity)
+        (1. - jnp.exp(-decay_rates[0] * maturity)) / decay_rates[0] / maturity,
+        - jnp.exp(-decay_rates[0] * maturity) + \
+        (1. - jnp.exp(-decay_rates[0] * maturity)) / decay_rates[0] / maturity,
+        (1. - jnp.exp(-decay_rates[1] * maturity)) / decay_rates[1] / maturity,
+        - jnp.exp(-decay_rates[1] * maturity) + \
+        (1. - jnp.exp(-decay_rates[1] * maturity)) / decay_rates[1] / maturity,
     ])
             
-def forward_basis(decay_rate: float, maturity: float) -> np.array:
-    """The three Nelson-Siegel basis functions for forward rates.
+def forward_basis(
+    decay_rates: Tuple[float, float], 
+    maturity: float
+) -> np.array:
+    """The five Nelson-Siegel basis functions for forward rates.
 
     Parameters
     ----------
-    decay_rate : float
-        lambda.
+    decay_rates : Tuple[float, float]
+        The two decay rates.
     maturity : float
-        time-to-maturity.
+        Time-to-maturity.
 
     Returns
     -------
     np.array
-        Three basis functions for forward rates.
+        Five basis functions for forward rates.
     """
     return np.array([
         1,
-        jnp.exp(-decay_rate * maturity),
-        decay_rate * maturity * jnp.exp(-decay_rate * maturity)
+        jnp.exp(-decay_rates[0] * maturity),
+        decay_rates[0] * maturity * jnp.exp(-decay_rates[0] * maturity),
+        jnp.exp(-decay_rates[1] * maturity),
+        decay_rates[1] * maturity * jnp.exp(-decay_rates[1] * maturity)
     ])
 
 class DynamicNelsonSiegel(kf.OUModel):
@@ -59,7 +67,7 @@ class DynamicNelsonSiegel(kf.OUModel):
     """
     def __init__(
         self, 
-        decay_rate: float,
+        decay_rates: Tuple[float, float],
         maturities: List[float],
         delta_t: float = 1/250
     ) -> None:
@@ -67,10 +75,8 @@ class DynamicNelsonSiegel(kf.OUModel):
 
         Parameters
         ----------
-        B : np.array
-            Observation intercept, shape = [dim_y].
-        H : np.ndarray
-            Observation matrix, shape = [dim_y, dim_x].
+        decay_rates : Tuple[float, float]
+            The two decay rates.
         maturities : List[float]
             All Time-to-maturity of interest.
         delta_t : float, optional
@@ -80,11 +86,11 @@ class DynamicNelsonSiegel(kf.OUModel):
         -------
         None
         """
-        self.decay_rate = decay_rate
+        self.decay_rates = decay_rates
         self.maturities = maturities
         B = np.zeros(len(maturities))
         H = np.array([
-            yield_basis(self.decay_rate, m) for m in maturities
+            yield_basis(self.decay_rates, m) for m in maturities
         ])
         
         super().__init__(B=B, H=H, delta_t=delta_t)
