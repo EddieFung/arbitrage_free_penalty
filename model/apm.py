@@ -1,5 +1,4 @@
 from typing import List, Sequence, Callable
-
 import numpy as np
 
 import jax
@@ -14,10 +13,12 @@ from model import utils
 from model import kalman_filter as kf
 
 class MLP(nn.Module):
-    """
-    Multilayer perceptron using sigmoid activation.
+    """Multilayer perceptron using sigmoid activation.
     
-    :params features: number of neurons in each layer.
+    Parameters
+    ----------
+    features : Sequence[int]
+        Number of neurons in each layer.
     """
     features: Sequence[int]
 
@@ -30,6 +31,14 @@ class MLP(nn.Module):
         return x
 
 class AFPM:
+    """Arbitrage-free penalized models in Kratsios and Hyndman (2020).
+    
+    Provided with a time series of forward rates, the essential information 
+    required to define an affine factor model is the basis functions. This 
+    method then identify a series of affine factor models that:
+    (i) is closet to the provided factor model w.r.t. some distance measure,
+    (ii) converges to arbitrage-free models under the HJM framework.
+    """
     def __init__(
         self,
         features: Sequence[int],
