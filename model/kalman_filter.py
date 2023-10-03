@@ -228,7 +228,7 @@ class OUTransitionModel:
         cov_mat = jnp.matmul(sqrt_mat, sqrt_mat.T)
         hat_P0 = jnp.matmul(
             jnp.matmul(eig_vector.T, cov_mat), eig_vector
-        ) / sum_eig_val
+        ) / sum_eig_val * jnp.exp(- sum_eig_val * self.delta_t)
         hat_Q = hat_P0 * \
             (1 - jnp.exp(-self.delta_t * sum_eig_val))
         return (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0)

@@ -21,13 +21,13 @@ def yield_basis(decay_rates: Tuple[float, float], maturity: float) -> np.array:
         Five basis functions for yields.
     """
     if maturity == 0.:
-        return jnp.array([1., 1., 0., 1., 0.])
+        return jnp.array([1., 1., 1., 0., 0.])
     return jnp.array([
         1,
         (1. - jnp.exp(-decay_rates[0] * maturity)) / decay_rates[0] / maturity,
+        (1. - jnp.exp(-decay_rates[1] * maturity)) / decay_rates[1] / maturity,
         - jnp.exp(-decay_rates[0] * maturity) + \
         (1. - jnp.exp(-decay_rates[0] * maturity)) / decay_rates[0] / maturity,
-        (1. - jnp.exp(-decay_rates[1] * maturity)) / decay_rates[1] / maturity,
         - jnp.exp(-decay_rates[1] * maturity) + \
         (1. - jnp.exp(-decay_rates[1] * maturity)) / decay_rates[1] / maturity,
     ])
@@ -53,8 +53,8 @@ def forward_basis(
     return np.array([
         1,
         jnp.exp(-decay_rates[0] * maturity),
-        decay_rates[0] * maturity * jnp.exp(-decay_rates[0] * maturity),
         jnp.exp(-decay_rates[1] * maturity),
+        decay_rates[0] * maturity * jnp.exp(-decay_rates[0] * maturity),
         decay_rates[1] * maturity * jnp.exp(-decay_rates[1] * maturity)
     ])
 
