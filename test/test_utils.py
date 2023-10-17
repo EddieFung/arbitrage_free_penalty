@@ -1,7 +1,7 @@
 import numpy as np
 import unittest
 
-from model import utils
+from utils import utils
 
 class TestGrids(unittest.TestCase):
     @classmethod

@@ -1,8 +1,8 @@
 import numpy as np
 import unittest
 
-from model import kalman_filter as kf
-from model import nelson_siegel as ns
+from utils import kalman_filter as kf
+from utils import nelson_siegel as ns
 
 class TestNelsonSiegel(unittest.TestCase):
     

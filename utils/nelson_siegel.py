@@ -2,7 +2,7 @@ from typing import Tuple, List
 import numpy as np
 import jax.numpy as jnp
 
-from model import kalman_filter as kf
+from utils import kalman_filter as kf
 
 
 def yield_basis(decay_rates: Tuple[float, float], maturity: float) -> np.array:

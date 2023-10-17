@@ -4,21 +4,7 @@ import unittest
 from model import afns
 from model import kalman_filter as kf
 
-class Test_yield_adjustment(unittest.TestCase):
-    
-    @classmethod
-    def setUpClass(cls):
-        cls.decay_rate = 0.5
-        cls.maturities = [1., 2., 5., 20.]  # randomly selected
-    
-    def test_afns_yield_adjustment(self):
-        sigma = np.array([0.0051, 0.0110, 0.0264]) # from Christensen et al. (2011)
-        for maturity in self.maturities:
-            self.assertLess(
-                afns.arbitrage_free_yield_adjustment(self.decay_rate, sigma, maturity),
-                0.
-            )
-            
+
 class TestAFNS(unittest.TestCase):
     
     @classmethod

@@ -1,7 +1,7 @@
 import numpy as np
 import unittest
 
-from model import kalman_filter as kf
+from utils import kalman_filter as kf
 
 
 class TestBaseLGSSM(unittest.TestCase):
