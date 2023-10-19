@@ -4,25 +4,45 @@ import jax
 import jax.numpy as jnp
 
 
-@jax.jit
 def adjustment_matrix(m: float, rates: np.array) -> np.ndarray:
+    """Matrix for yield adjustment term.
+    
+    In the 5-factor AFNS model, the yield adjustment term (intercept) equals:
+    -tr[Covariance matrix @ -this matrix]
+
+    Parameters
+    ----------
+    m : float
+        Time-to-maturity.
+    rates : np.array
+        The two decay rates.
+
+    Returns
+    -------
+    np.ndarray
+        adjustment matrix, shape = [5, 5].
+    """
     if m == 0:
-        return np.zeros([[5, 5]])
+        return np.zeros([5, 5])
+    
+    rates_2 = np.array([rates[0], rates[0]])
+    rates_3 = np.array([rates[1], rates[1]])
+    rates_4 = np.array([rates[1], rates[0]])
     return np.array([
         [m**2 / 6, fn_1(m, rates[0]), fn_1(m, rates[1]), 
          fn_2(m, rates[0]), fn_2(m, rates[1])],
         [fn_1(m, rates[0]), 
-         fn_3(m, [rates[0], rates[0]]), fn_3(m, [rates[1], rates[0]]),
-         fn_5(m, [rates[0], rates[0]]), fn_5(m, [rates[0], rates[1]])],
+         fn_3(m, rates_2), fn_3(m, rates_4),
+         fn_5(m, rates_2), fn_5(m, rates)],
         [fn_1(m, rates[1]), 
-         fn_3(m, [rates[0], rates[1]]), fn_3(m, [rates[1], rates[1]]),
-         fn_5(m, [rates[1], rates[0]]), fn_5(m, [rates[1], rates[1]])],
+         fn_3(m, rates), fn_3(m, rates_3),
+         fn_5(m, rates_4), fn_5(m, rates_3)],
         [fn_2(m, rates[0]), 
-         fn_5(m, [rates[0], rates[0]]), fn_5(m, [rates[1], rates[0]]),
-         fn_4(m, [rates[0], rates[0]]), fn_4(m, [rates[1], rates[0]])],
+         fn_5(m, rates_2), fn_5(m, rates_4),
+         fn_4(m, rates_2), fn_4(m, rates_4)],
         [fn_2(m, rates[1]), 
-         fn_5(m, [rates[0], rates[1]]), fn_5(m, [rates[1], rates[1]]),
-         fn_4(m, [rates[0], rates[1]]), fn_4(m, [rates[1], rates[1]])]
+         fn_5(m, rates), fn_5(m, rates_3),
+         fn_4(m, rates), fn_4(m, rates_3)]
     ])
 
 @jax.jit
