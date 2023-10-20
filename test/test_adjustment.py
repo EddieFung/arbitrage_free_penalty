@@ -107,49 +107,26 @@ class TestAdjustment(unittest.TestCase):
         cls.rates_4 = np.array([0.75, 0.5])
         
     def test_dependent_5_factor(self):
-        """Compare adjustment terms in dependent 5-factor case.
+        """Compare adjustment terms in the dependent 5-factor case.
         """
-        low_tri_mat = np.array([
-            [0.01, 0, 0, 0, 0],
-            [0.011, 0.012, 0, 0, 0],
-            [0.013, 0.014, 0.015, 0, 0],
-            [0.016, 0.017, 0.018, 0.019, 0],
-            [0.020, 0.021, 0.022, 0.023, 0.024]
-        ])
-        cov_mat = jnp.matmul(low_tri_mat, low_tri_mat.T)
-        ans = exact_A(self.m, self.rates) * cov_mat[0, 0]+ \
+        sqrt_mat = np.random.uniform(0.01, 0.03, [5,5])
+        cov_mat = jnp.matmul(sqrt_mat, sqrt_mat.T)
+        ans = exact_A(self.m, self.rates) * cov_mat[0, 0] + \
             exact_B(self.m, self.rates) * cov_mat[1, 1] + \
-            exact_C(self.m, self.rates) * cov_mat[2, 2]+ \
+            exact_C(self.m, self.rates) * cov_mat[2, 2] + \
             exact_D(self.m, self.rates) * cov_mat[3, 3] + \
             exact_E(self.m, self.rates) * cov_mat[4, 4] + \
-            exact_F(self.m, self.rates) * low_tri_mat[0, 0] * low_tri_mat[1, 0] + \
-            exact_G(self.m, self.rates) * low_tri_mat[0, 0] * low_tri_mat[2, 0] + \
-            exact_H(self.m, self.rates) * low_tri_mat[0, 0] * low_tri_mat[3, 0] + \
-            exact_I(self.m, self.rates) * low_tri_mat[0, 0] * low_tri_mat[4, 0] + \
-            exact_J(self.m, self.rates) * (
-                low_tri_mat[1, 0] * low_tri_mat[2, 0] + \
-                low_tri_mat[1, 1] * low_tri_mat[2, 1]) + \
-            exact_K(self.m, self.rates) * (
-                low_tri_mat[1, 0] * low_tri_mat[3, 0] + \
-                low_tri_mat[1, 1] * low_tri_mat[3, 1]) + \
-            exact_L(self.m, self.rates) * (
-                low_tri_mat[1, 0] * low_tri_mat[4, 0] + \
-                low_tri_mat[1, 1] * low_tri_mat[4, 1]) + \
-            exact_M(self.m, self.rates) * (
-                low_tri_mat[2, 0] * low_tri_mat[3, 0] + \
-                low_tri_mat[2, 1] * low_tri_mat[3, 1] + \
-                low_tri_mat[2, 2] * low_tri_mat[3, 2]) + \
-            exact_N(self.m, self.rates) * (
-                low_tri_mat[2, 0] * low_tri_mat[4, 0] + \
-                low_tri_mat[2, 1] * low_tri_mat[4, 1] + \
-                low_tri_mat[2, 2] * low_tri_mat[4, 2]) + \
-            exact_O(self.m, self.rates) * (
-                low_tri_mat[3, 0] * low_tri_mat[4, 0] + \
-                low_tri_mat[3, 1] * low_tri_mat[4, 1] + \
-                low_tri_mat[3, 2] * low_tri_mat[4, 2] + \
-                low_tri_mat[3, 3] * low_tri_mat[4, 3]) 
+            exact_F(self.m, self.rates) * cov_mat[0, 1] + \
+            exact_G(self.m, self.rates) * cov_mat[0, 2] + \
+            exact_H(self.m, self.rates) * cov_mat[0, 3] + \
+            exact_I(self.m, self.rates) * cov_mat[0, 4] + \
+            exact_J(self.m, self.rates) * cov_mat[1, 2] + \
+            exact_K(self.m, self.rates) * cov_mat[1, 3] + \
+            exact_L(self.m, self.rates) * cov_mat[1, 4] + \
+            exact_M(self.m, self.rates) * cov_mat[2, 3] + \
+            exact_N(self.m, self.rates) * cov_mat[2, 4] + \
+            exact_O(self.m, self.rates) * cov_mat[3, 4]
             
-        cov_mat = jnp.matmul(low_tri_mat, low_tri_mat.T)
         mat = adjustment.adjustment_matrix(self.m, self.rates)
         self.assertAlmostEqual(
             jnp.sum(jnp.diag(jnp.matmul(cov_mat, -mat))),
@@ -158,7 +135,7 @@ class TestAdjustment(unittest.TestCase):
         )
 
     def test_independent_5_factor(self):
-        """Compare adjustment terms in independent 5-factor case.
+        """Compare adjustment terms in the independent 5-factor case.
         """
         cov_mat_diag = np.random.uniform(0.01, 0.1, 5)
         cov_mat = np.diag(cov_mat_diag**2)

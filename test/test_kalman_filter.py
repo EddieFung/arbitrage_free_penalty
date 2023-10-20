@@ -10,8 +10,8 @@ class TestBaseLGSSM(unittest.TestCase):
     def setUpClass(cls):
         np.random.seed(0)
         
-        cls.dim_x = 3
-        cls.dim_y = 5
+        cls.dim_x = 5
+        cls.dim_y = 6
         
         cls.A = np.random.normal(size=cls.dim_x) * 0.1
         cls.F = np.diag(np.random.uniform(low=0.5, high=0.9, size=cls.dim_x))
@@ -100,8 +100,8 @@ class TestOUTransitionModel(unittest.TestCase):
     def setUpClass(cls):
         np.random.seed(0)
         
-        cls.dim_x = 3
-        cls.dim_y = 5
+        cls.dim_x = 5
+        cls.dim_y = 6
         cls.delta_t = 1/250
         
         cls.B = np.random.normal(size=cls.dim_y) * 0.2
@@ -117,18 +117,14 @@ class TestOUTransitionModel(unittest.TestCase):
         
         np.testing.assert_equal(self.model._k_p.shape, (self.dim_x, self.dim_x))
         np.testing.assert_equal(len(self.model._theta_p), self.dim_x) 
-        np.testing.assert_equal(len(self.model._log_diag), self.dim_x) 
-        np.testing.assert_equal(
-            len(self.model._off_diag), 
-            int(self.dim_x * (self.dim_x - 1) / 2)
-        ) 
+        np.testing.assert_equal(len(self.model._log_sd), self.dim_x) 
         np.testing.assert_equal(len(self.model._log_obs_sd), self.dim_y) 
 
     def test_sepcify_continuous_dynamic(self):
-        sqrt_mat, eig_val, eig_vector = self.model._sepcify_continuous_dynamic([
-            self.model._k_p, self.model._log_diag, self.model._off_diag,
+        cov_mat, eig_val, eig_vector = self.model._sepcify_continuous_dynamic([
+            self.model._k_p, self.model._log_sd, self.model._transformed_corr,
         ])
-        np.testing.assert_equal(sqrt_mat.shape, (self.dim_x, self.dim_x))
+        np.testing.assert_equal(cov_mat.shape, (self.dim_x, self.dim_x))
         np.testing.assert_equal(len(eig_val), self.dim_x)
         np.testing.assert_equal(eig_vector.shape, (self.dim_x, self.dim_x))
         
@@ -136,7 +132,7 @@ class TestOUTransitionModel(unittest.TestCase):
         self.model._log_obs_sd = np.zeros(self.dim_y)
         (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0) = self.model._sepcify_discrete_dynamic([
             self.model._k_p, self.model._theta_p, 
-            self.model._log_diag, self.model._off_diag,
+            self.model._log_sd, self.model._transformed_corr,
             self.model._log_obs_sd
         ])
         np.testing.assert_equal(len(hat_A), self.dim_x)
@@ -155,8 +151,8 @@ class TestOUModel(unittest.TestCase):
     def setUpClass(cls):
         np.random.seed(0)
         
-        cls.dim_x = 3
-        cls.dim_y = 5
+        cls.dim_x = 5
+        cls.dim_y = 6
         
         cls.B = np.random.normal(size=cls.dim_y) * 0.2
         cls.H = np.random.normal(size=(cls.dim_y, cls.dim_x)) * 0.5
@@ -174,11 +170,7 @@ class TestOUModel(unittest.TestCase):
         
         np.testing.assert_equal(self.model._k_p.shape, (self.dim_x, self.dim_x))
         np.testing.assert_equal(len(self.model._theta_p), self.dim_x) 
-        np.testing.assert_equal(len(self.model._log_diag), self.dim_x) 
-        np.testing.assert_equal(
-            len(self.model._off_diag), 
-            int(self.dim_x * (self.dim_x - 1) / 2)
-        ) 
+        np.testing.assert_equal(len(self.model._log_sd), self.dim_x) 
         np.testing.assert_equal(len(self.model._log_obs_sd), self.dim_y) 
 
 if __name__ == '__main__':

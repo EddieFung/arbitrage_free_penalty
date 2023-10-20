@@ -4,9 +4,9 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from utils import adjustment
-from model import kalman_filter as kf
-from model import nelson_siegel as ns
+from model.afns import adjustment
+from utils import kalman_filter as kf
+from utils import nelson_siegel as ns
 
         
 class AFNS(kf.OUTransitionModel):
@@ -15,7 +15,8 @@ class AFNS(kf.OUTransitionModel):
     def __init__(
         self, 
         maturities: List[float],
-        delta_t: float = 1/250
+        delta_t: float = 1/250,
+        decay_rates: Tuple[float, float] = [0.4, 1.2]
     ) -> None:
         """Instantiate the class.
         
@@ -31,17 +32,12 @@ class AFNS(kf.OUTransitionModel):
         None
         """
         super().__init__(delta_t=delta_t)
-        self._log_rates = jnp.array((jnp.log(1.2), jnp.log(0.4)))
         self.maturities = maturities
+        self._log_rates = np.log(decay_rates)
         self._log_obs_sd = np.zeros(len(maturities))
         
-    def specify_adjustments(self, maturities: List[float]) -> float:
+    def specify_adjustments(self) -> float:
         """Specify the yield adjustment term of AFNS.
-        
-        Parameters
-        ----------
-        maturities : List[float]
-            All Time-to-maturity of interest.
 
         Returns
         -------
@@ -50,21 +46,11 @@ class AFNS(kf.OUTransitionModel):
 
         """
         return self._specify_adjustments(
-            maturity=maturity,
-            pars=[self._log_rates, self._k_p, self.log_diag, self._off_diag]
+            pars=[self._log_rates, self._k_p, self._log_sd, self._transformed_corr]
         )
     
-    def _specify_adjustments(
-        self,  
-        maturities: List[float], 
-        pars: Tuple
-    ) -> float:
+    def _specify_adjustments(self, pars: Tuple) -> float:
         """Hidden method to specify the yield adjustment term of AFNS.
-
-        Parameters
-        ----------
-        pars : Tuple
-            Parameter values.
 
         Returns
         -------
@@ -72,18 +58,19 @@ class AFNS(kf.OUTransitionModel):
             yield adjustment term.
 
         """
-        log_rates, k_p, log_diag, off_diag = pars
+        log_rates, k_p, log_sd, transformed_corr = pars
         rates = jnp.exp(log_rates)
-        sqrt_mat, eig_val, eig_vector = super()._sepcify_continuous_dynamic([
-            k_p, log_diag, off_diag
+        cov_mat, eig_val, eig_vector = super()._sepcify_continuous_dynamic([
+            k_p, log_sd, transformed_corr
         ])
-        #TODO: adjustment matrix?
-        adjustment_mat = adjustment.adjustment_mat(
-            rates, sqrt_mat, eig_val, eig_vector, maturity
-        )
-        return - jnp.sum(jnp.diag(
-            jnp.matmul(jnp.matmul(sqrt_mat, sqrt_mat.T), adjustment_mat)
-        ))
+        adjustments = np.zeros(len(self.maturities))
+        for idx, m in enumerate(self.maturities):
+            adjustment_mat = adjustment.adjustment_matrix(m, rates)
+            adjustments[idx] = jnp.sum(jnp.diag(
+                jnp.matmul(cov_mat, -adjustment_mat)
+            ))
+            
+        return adjustments
         
     
     def specify_filter(self) -> kf.BaseLGSSM:
@@ -95,8 +82,8 @@ class AFNS(kf.OUTransitionModel):
             The LGSSM. 
         """
         return self._specify_filter([
-            self._log_rate, self._k_p, self._theta_p, self._log_diag, 
-            self._off_diag, self._log_obs_sd
+            self._log_rates, self._k_p, self._theta_p, self._log_sd, 
+            self._transformed_corr, self._log_obs_sd
         ])
         
     def _specify_filter(self, pars: Tuple) -> kf.BaseLGSSM:
@@ -112,14 +99,14 @@ class AFNS(kf.OUTransitionModel):
         kf.BaseLGSSM
             The LGSSM. 
         """
-        log_rates, k_p, theta_p, log_diag, off_diag, log_obs_sd = pars
+        log_rates, k_p, theta_p, log_sd, transformed_corr, log_obs_sd = pars
         (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0) = super()._sepcify_discrete_dynamic([
-            k_p, theta_p, log_diag, off_diag, log_obs_sd
+            k_p, theta_p, log_sd, transformed_corr, log_obs_sd
         ])
         
-        hat_B = jnp.array([self._specify_adjustment(
-            m, [log_rates, k_p, log_diag, off_diag]
-        ) for m in self.maturities])
+        hat_B = self._specify_adjustments(
+            [log_rates, k_p, log_sd, transformed_corr]
+        )
         hat_H = jnp.array([ns.yield_basis(jnp.exp(log_rates), m) 
                            for m in self.maturities])
         
@@ -173,8 +160,8 @@ class AFNS(kf.OUTransitionModel):
         
         if not initialized:
             self.initialize(df)
-        pars = [self._log_rate, self._k_p, self._theta_p, self._log_diag, 
-                self._off_diag, self._log_obs_sd]
+        pars = [self._log_rates, self._k_p, self._theta_p, self._log_sd, 
+                self._transformed_corr, self._log_obs_sd]
         pars = super()._inference(pars, df, neg_log_like, iterations)
-        [self._log_rate, self._k_p, self._theta_p, self._log_diag, 
-         self._off_diag, self._log_obs_sd] = pars
+        [self._log_rates, self._k_p, self._theta_p, self._log_sd, 
+         self._transformed_corr, self._log_obs_sd] = pars

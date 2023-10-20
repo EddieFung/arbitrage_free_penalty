@@ -160,8 +160,8 @@ class OUTransitionModel:
         
         self._k_p = np.eye(self.dim_x)
         self._theta_p = np.zeros(self.dim_x)
-        self._log_diag = - np.ones(self.dim_x) / 2.
-        self._off_diag = np.zeros(int(self.dim_x * (self.dim_x - 1) / 2))
+        self._log_sd = - np.ones(self.dim_x) / 2.
+        self._transformed_corr = -2.
         self._log_obs_sd = None
         
     def _sepcify_continuous_dynamic(self, pars: Tuple) -> Tuple:
@@ -175,21 +175,21 @@ class OUTransitionModel:
         Returns
         -------
         Tuple
-            Square-root of the continuous-time Sigma, shape = dim_x, dim_x];
+            Continuous-time covariance matrix, shape = [dim_x, dim_x];
             Eigenvalues of k_p, shape = [dim_x],
             Eigenvectors of k_p, shape = dim_x, dim_x].
         """
-        k_p, log_diag, off_diag = pars 
+        k_p, log_sd, transformed_corr = pars 
         
         # Estimate the square-root matrix
-        sqrt_mat = jnp.zeros([self.dim_x, self.dim_x])
-        sqrt_mat = sqrt_mat.at[jnp.tril_indices(self.dim_x, -1)].set(off_diag)
-        sqrt_mat += jnp.diag(jnp.exp(log_diag))
+        corr = jax.nn.sigmoid(transformed_corr)
+        cov_mat = np.ones([5, 5]) * corr - np.eye(5) * corr + \
+            np.diag(np.exp(2 * log_sd))
         
         # eigendecomposition of k_p
         eig_val, eig_vector = jax.jit(jnp.linalg.eig)(k_p)  
         
-        return sqrt_mat, eig_val, eig_vector
+        return cov_mat, eig_val, eig_vector
     
     def _sepcify_discrete_dynamic(self, pars: Tuple) -> Tuple:
         """Hidden method to specify components in discrete-time dynamic.
@@ -210,9 +210,9 @@ class OUTransitionModel:
             observation covariance matrix;
             initial distribution mean, covariance matrix.
         """
-        k_p, theta_p, log_diag, off_diag, log_obs_sd = pars
-        sqrt_mat, eig_val, eig_vector = self._sepcify_continuous_dynamic(
-            (k_p, log_diag, off_diag)
+        k_p, theta_p, log_sd, transformed_corr, log_obs_sd = pars
+        cov_mat, eig_val, eig_vector = self._sepcify_continuous_dynamic(
+            (k_p, log_sd, transformed_corr)
         )
         
         hat_F = jnp.matmul(
@@ -225,7 +225,6 @@ class OUTransitionModel:
         
         # shape = [dim_x, dim_x] 
         sum_eig_val = eig_val[:, jnp.newaxis] + eig_val[jnp.newaxis, :]
-        cov_mat = jnp.matmul(sqrt_mat, sqrt_mat.T)
         hat_P0 = jnp.matmul(
             jnp.matmul(eig_vector.T, cov_mat), eig_vector
         ) / sum_eig_val * jnp.exp(- sum_eig_val * self.delta_t)
@@ -257,13 +256,13 @@ class OUTransitionModel:
         transition_mat_diag = np.maximum(
             np.minimum(non_stationary_transition_mat_diag, 0.99), 0.01
         )
-        k = - jnp.log(transition_mat_diag) / self.delta_t  # shape = [3]
+        k = - jnp.log(transition_mat_diag) / self.delta_t  # shape = [5]
         self._k_p = jnp.diag(k)
   
         # initialize sigma, assume diagonal cov
         transition_var = jnp.var(states[1:,] - \
                                  states[:-1,] * transition_mat_diag, 0)
-        self._log_diag = 0.5 * jnp.log(
+        self._log_sd = 0.5 * jnp.log(
             transition_var / (1. - transition_mat_diag**2) * 2. * k
         )  # shape = [dim_x]
   
@@ -358,7 +357,7 @@ class OUModel(OUTransitionModel):
         """
         return self._specify_filter([
             self._k_p, self._theta_p, 
-            self._log_diag, self._off_diag, self._log_obs_sd
+            self._log_sd, self._transformed_corr, self._log_obs_sd
         ])
         
     def _specify_filter(self, pars: Tuple) -> BaseLGSSM:
@@ -422,7 +421,7 @@ class OUModel(OUTransitionModel):
         if not initialized:
             self.initialize(df)
         pars = [self._log_k, self._theta, 
-                self._log_sigma, self._log_corr, self._log_obs_sd]
+                self._log_sd, self._log_transformed_corr, self._log_obs_sd]
         pars = super()._inference(pars, df, neg_log_like, iterations)
         (self._log_k, self._theta,
          self._log_sigma, self._log_corr, self._log_obs_sd) = pars
