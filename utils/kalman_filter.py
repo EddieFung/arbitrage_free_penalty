@@ -163,22 +163,43 @@ class OUTransitionModel:
         self._log_sd = - jnp.ones(self.dim_x) / 2.
         self._transformed_corr = -2.
         self._log_obs_sd = None
-        
-    def _sepcify_continuous_covariance(self, pars: Tuple) -> np.ndarray:
-        """Hidden method to specify the continuous-time covariance matrix.
+    
+    def _independent_continuous_covariance(
+            self, log_sd: np.array
+        ) -> np.ndarray:
+        """Hidden method for the independent continuous-time covariance matrix.
 
         Parameters
         ----------
-        pars : Tuple
-            Parameter values: (log_diag, transformed_corr).
+        log_sd: np.array 
+            Log-standard-deviation of the covariance matrix, shape = [dim_x].
 
         Returns
         -------
         np.ndarray
-            Continuous-time covariance matrix, shape = [dim_x, dim_x].
+            Independent continuous-time covariance matrix, shape = [dim_x, dim_x].
         """
-        log_sd, transformed_corr = pars 
-        
+        return jnp.diag(jnp.exp(2. * log_sd))
+    
+    def _dependent_continuous_covariance(
+        self, 
+        log_sd: np.array, 
+        transformed_corr: float
+    ) -> np.ndarray:
+        """Hidden method for the dependent continuous-time covariance matrix.
+
+        Parameters
+        ----------
+        log_sd: np.array 
+            Log-standard-deviation of the covariance matrix, shape = [dim_x].
+        transformed_corr: float
+            Transformed correlations.
+
+        Returns
+        -------
+        np.ndarray
+            Dependent continuous-time covariance matrix, shape = [dim_x, dim_x].
+        """     
         corr = jax.nn.sigmoid(transformed_corr)
         corr_mat = jnp.ones([self.dim_x, self.dim_x]) * corr + \
             jnp.eye(self.dim_x) * (1. - corr)
@@ -190,7 +211,11 @@ class OUTransitionModel:
         
         return cov_mat
     
-    def _sepcify_discrete_dynamic(self, pars: Tuple) -> Tuple:
+    def _discrete_components(
+        self, 
+        cov_mat: np.ndarray,
+        pars: Tuple
+    ) -> Tuple:
         """Hidden method to specify components in discrete-time dynamic.
         
         Transition equation, initialization equation, and the observation
@@ -198,10 +223,13 @@ class OUTransitionModel:
         left unspecified.
         
         hat_Q is approximated using trapezoid rule.
+        
         Parameters
         ----------
+        cov_mat: np.ndarray
+            Continuous-time covariance matrix, shape = [dim_x, dim_x].
         pars : Tuple
-            Parameter values: (k_p, theta_p, log_diag, off_diag, log_obs_sd).
+            Parameter values: (k_p, theta_p, log_obs_sd).
 
         Returns
         -------
@@ -210,19 +238,16 @@ class OUTransitionModel:
             observation covariance matrix;
             initial distribution mean, covariance matrix.
         """
-        k_p, theta_p, log_sd, transformed_corr, log_obs_sd = pars
-        cov_mat = self._sepcify_continuous_covariance(
-            (log_sd, transformed_corr)
-        )
+        k_p, theta_p, log_obs_sd = pars
         
         hat_F = jsc.linalg.expm(- self.delta_t * k_p)
 
         hat_A = (jnp.eye(self.dim_x) - hat_F) @ theta_p
-        hat_R = jnp.diag(jnp.exp(2 * log_obs_sd))
+        hat_R = jnp.diag(jnp.exp(2. * log_obs_sd))
         hat_m0 = theta_p
         
-        hat_Q = (self.delta_t / 2) * (cov_mat + hat_F @ cov_mat @ hat_F.T)    
-        hat_P0 = hat_Q * 2
+        hat_Q = (self.delta_t / 2.) * (cov_mat + hat_F @ cov_mat @ hat_F.T)    
+        hat_P0 = hat_Q * 2.
         
         return (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0)
     
@@ -369,7 +394,13 @@ class OUModel(OUTransitionModel):
         BaseLGSSM
             The LGSSM. 
         """
-        (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0) = super()._sepcify_discrete_dynamic(pars)
+        k_p, theta_p, log_sd, transformed_corr, log_obs_sd = pars
+        cov_mat = super()._dependent_continuous_covariance(
+            log_sd, transformed_corr
+        )
+        (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0) = super()._discrete_components(
+            cov_mat, (k_p, theta_p, log_obs_sd)
+        )
         return BaseLGSSM(hat_A, hat_F, hat_Q, self.B, self.H, hat_R, hat_m0, hat_P0)
     
     def initialize(self, df: np.ndarray) -> None:

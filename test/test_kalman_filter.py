@@ -120,20 +120,29 @@ class TestOUTransitionModel(unittest.TestCase):
         np.testing.assert_equal(len(self.model._log_sd), self.dim_x) 
         np.testing.assert_equal(len(self.model._log_obs_sd), self.dim_y) 
 
-    def test_sepcify_continuous_covariance(self):
-        cov_mat = self.model._sepcify_continuous_covariance([
-            self.model._log_sd, self.model._transformed_corr,
-        ])
+    def test_independent_continuous_covariance(self):
+        cov_mat = self.model._independent_continuous_covariance(
+            self.model._log_sd
+        )
+        np.testing.assert_equal(cov_mat.shape, (self.dim_x, self.dim_x))
+        np.testing.assert_array_almost_equal(cov_mat, cov_mat.T)
+       
+    def test_dependent_continuous_covariance(self):
+        cov_mat = self.model._dependent_continuous_covariance(
+            self.model._log_sd, self.model._transformed_corr
+        )
         np.testing.assert_equal(cov_mat.shape, (self.dim_x, self.dim_x))
         np.testing.assert_array_almost_equal(cov_mat, cov_mat.T)
         
-    def test_sepcify_discrete_dynamic(self):
+    def test_discrete_components(self):
         self.model._log_obs_sd = np.zeros(self.dim_y)
-        (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0) = self.model._sepcify_discrete_dynamic([
-            self.model._k_p, self.model._theta_p, 
-            self.model._log_sd, self.model._transformed_corr,
-            self.model._log_obs_sd
-        ])
+        cov_mat = self.model._dependent_continuous_covariance(
+            self.model._log_sd, self.model._transformed_corr
+        )
+        (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0) = self.model._discrete_components(
+            cov_mat, 
+            (self.model._k_p, self.model._theta_p, self.model._log_obs_sd)
+        )
         np.testing.assert_equal(len(hat_A), self.dim_x)
         np.testing.assert_equal(hat_F.shape, (self.dim_x, self.dim_x))
         np.testing.assert_equal(hat_Q.shape, (self.dim_x, self.dim_x))
