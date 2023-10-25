@@ -5,8 +5,31 @@ import jax.numpy as jnp
 from utils import kalman_filter as kf
 
 
+def three_yield_basis(decay_rate: float, maturity: float) -> np.array:
+    """The three Nelson-Siegel basis functions for Yields.
+
+    Parameters
+    ----------
+    decay_rate : float
+        The decay rate.
+    maturity : float
+        Time-to-maturity.
+
+    Returns
+    -------
+    np.array
+        Five basis functions for yields.
+    """
+    if maturity == 0.:
+        return jnp.array([1., 1., 0.])
+    return jnp.array([
+        1,
+        (1. - jnp.exp(-decay_rate * maturity)) / decay_rate / maturity,
+        (1. - jnp.exp(-decay_rate * maturity)) / decay_rate / maturity
+    ])
+        
 def yield_basis(decay_rates: Tuple[float, float], maturity: float) -> np.array:
-    """The five Nelson-Siegel basis functions for Yields.
+    """The five Generalized Nelson-Siegel basis functions for Yields.
 
     Parameters
     ----------
@@ -67,20 +90,20 @@ class DynamicNelsonSiegel(kf.OUModel):
     """
     def __init__(
         self, 
-        decay_rates: Tuple[float, float],
         maturities: List[float],
-        delta_t: float = 1/250
+        delta_t: float = 1/250,
+        decay_rates: Tuple[float, float] = [0.4, 1.2]
     ) -> None:
         """Instantiate the class.
 
         Parameters
         ----------
-        decay_rates : Tuple[float, float]
-            The two decay rates.
         maturities : List[float]
             All Time-to-maturity of interest.
         delta_t : float, optional
             Time span between two observations. The default is 1/250.
+        decay_rates : Tuple[float, float]
+            The two decay rates.
 
         Returns
         -------

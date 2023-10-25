@@ -23,12 +23,12 @@ def adjustment_matrix(m: float, rates: np.array) -> np.ndarray:
         adjustment matrix, shape = [5, 5].
     """
     if m == 0:
-        return np.zeros([5, 5])
+        return jnp.zeros([5, 5])
     
-    rates_2 = np.array([rates[0], rates[0]])
-    rates_3 = np.array([rates[1], rates[1]])
-    rates_4 = np.array([rates[1], rates[0]])
-    return np.array([
+    rates_2 = jnp.repeat(rates[0], 2)
+    rates_3 = jnp.repeat(rates[1], 2)
+    rates_4 = jnp.flip(rates)
+    return jnp.array([
         [m**2 / 6, fn_1(m, rates[0]), fn_1(m, rates[1]), 
          fn_2(m, rates[0]), fn_2(m, rates[1])],
         [fn_1(m, rates[0]), 

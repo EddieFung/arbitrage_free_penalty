@@ -158,38 +158,37 @@ class OUTransitionModel:
         self.dim_x = dim_x
         self.delta_t = delta_t
         
-        self._k_p = np.eye(self.dim_x)
-        self._theta_p = np.zeros(self.dim_x)
-        self._log_sd = - np.ones(self.dim_x) / 2.
+        self._k_p = jnp.eye(self.dim_x)
+        self._theta_p = jnp.zeros(self.dim_x)
+        self._log_sd = - jnp.ones(self.dim_x) / 2.
         self._transformed_corr = -2.
         self._log_obs_sd = None
         
-    def _sepcify_continuous_dynamic(self, pars: Tuple) -> Tuple:
-        """Hidden method to specify components in continuous-time dynamic.
+    def _sepcify_continuous_covariance(self, pars: Tuple) -> np.ndarray:
+        """Hidden method to specify the continuous-time covariance matrix.
 
         Parameters
         ----------
         pars : Tuple
-            Parameter values: (k_p, log_diag, off_diag).
+            Parameter values: (log_diag, transformed_corr).
 
         Returns
         -------
-        Tuple
-            Continuous-time covariance matrix, shape = [dim_x, dim_x];
-            Eigenvalues of k_p, shape = [dim_x],
-            Eigenvectors of k_p, shape = dim_x, dim_x].
+        np.ndarray
+            Continuous-time covariance matrix, shape = [dim_x, dim_x].
         """
-        k_p, log_sd, transformed_corr = pars 
+        log_sd, transformed_corr = pars 
         
-        # Estimate the square-root matrix
         corr = jax.nn.sigmoid(transformed_corr)
-        cov_mat = np.ones([5, 5]) * corr - np.eye(5) * corr + \
-            np.diag(np.exp(2 * log_sd))
+        corr_mat = jnp.ones([self.dim_x, self.dim_x]) * corr + \
+            jnp.eye(self.dim_x) * (1. - corr)
+        cov_mat = jnp.einsum(
+            "i,ij->ij", 
+            jnp.exp(log_sd),
+            jnp.einsum("ij,j->ij", corr_mat, jnp.exp(log_sd))
+        )
         
-        # eigendecomposition of k_p
-        eig_val, eig_vector = jax.jit(jnp.linalg.eig)(k_p)  
-        
-        return cov_mat, eig_val, eig_vector
+        return cov_mat
     
     def _sepcify_discrete_dynamic(self, pars: Tuple) -> Tuple:
         """Hidden method to specify components in discrete-time dynamic.
@@ -198,6 +197,7 @@ class OUTransitionModel:
         covariance matrix are specified. Observation intercept and matrix are 
         left unspecified.
         
+        hat_Q is approximated using trapezoid rule.
         Parameters
         ----------
         pars : Tuple
@@ -211,25 +211,19 @@ class OUTransitionModel:
             initial distribution mean, covariance matrix.
         """
         k_p, theta_p, log_sd, transformed_corr, log_obs_sd = pars
-        cov_mat, eig_val, eig_vector = self._sepcify_continuous_dynamic(
-            (k_p, log_sd, transformed_corr)
+        cov_mat = self._sepcify_continuous_covariance(
+            (log_sd, transformed_corr)
         )
         
-        hat_F = jnp.matmul(
-            jnp.matmul(eig_vector.T, jnp.diag(jnp.exp(- self.delta_t * eig_val))), 
-            eig_vector
-        )
-        hat_A = theta_p * (jnp.eye(self.dim_x) - hat_F)
+        hat_F = jsc.linalg.expm(- self.delta_t * k_p)
+
+        hat_A = (jnp.eye(self.dim_x) - hat_F) @ theta_p
         hat_R = jnp.diag(jnp.exp(2 * log_obs_sd))
         hat_m0 = theta_p
         
-        # shape = [dim_x, dim_x] 
-        sum_eig_val = eig_val[:, jnp.newaxis] + eig_val[jnp.newaxis, :]
-        hat_P0 = jnp.matmul(
-            jnp.matmul(eig_vector.T, cov_mat), eig_vector
-        ) / sum_eig_val * jnp.exp(- sum_eig_val * self.delta_t)
-        hat_Q = hat_P0 * \
-            (1 - jnp.exp(-self.delta_t * sum_eig_val))
+        hat_Q = (self.delta_t / 2) * (cov_mat + hat_F @ cov_mat @ hat_F.T)    
+        hat_P0 = hat_Q * 2
+        
         return (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0)
     
     def _initialize(self, df: np.ndarray, H: np.ndarray) -> None:
@@ -249,12 +243,13 @@ class OUTransitionModel:
         # initialize latent states
         states = jnp.linalg.lstsq(H, df.T)[0].T  # shape = [dim_t, dim_x]
   
-        # initialize k while ensuring stationarity
+        # initialize k
         non_stationary_transition_mat_diag = jnp.diag(
             jnp.linalg.lstsq(states[:-1,], states[1:,])[0]
         )  # shape = [dim_x]
-        transition_mat_diag = np.maximum(
-            np.minimum(non_stationary_transition_mat_diag, 0.99), 0.01
+        
+        transition_mat_diag = jnp.maximum(
+            jnp.minimum(non_stationary_transition_mat_diag, 0.99), 0.91
         )
         k = - jnp.log(transition_mat_diag) / self.delta_t  # shape = [5]
         self._k_p = jnp.diag(k)
@@ -262,10 +257,11 @@ class OUTransitionModel:
         # initialize sigma, assume diagonal cov
         transition_var = jnp.var(states[1:,] - \
                                  states[:-1,] * transition_mat_diag, 0)
-        self._log_sd = 0.5 * jnp.log(
+        log_sd = 0.5 * jnp.log(
             transition_var / (1. - transition_mat_diag**2) * 2. * k
         )  # shape = [dim_x]
-  
+        self._log_sd = jnp.maximum(jnp.minimum(log_sd, -2.5), -6.)
+
         self._theta_p = jnp.mean(states, 0)  # shape = [dim_x]
   
         # two initializers on the observation std:
@@ -413,15 +409,14 @@ class OUModel(OUTransitionModel):
         -------
         None
         """
-        @jax.jit
         def neg_log_like(pars, df):
             model = self._specify_filter(pars)
             return -jnp.mean(model.forward_filter(df)[2])
         
         if not initialized:
             self.initialize(df)
-        pars = [self._log_k, self._theta, 
-                self._log_sd, self._log_transformed_corr, self._log_obs_sd]
+        pars = (self._k_p, self._theta_p, 
+                self._log_sd, self._transformed_corr, self._log_obs_sd)
         pars = super()._inference(pars, df, neg_log_like, iterations)
-        (self._log_k, self._theta,
-         self._log_sigma, self._log_corr, self._log_obs_sd) = pars
+        (self._k_p, self._theta_p,
+         self._log_sd, self._transformed_corr, self._log_obs_sd) = pars

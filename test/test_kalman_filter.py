@@ -120,13 +120,12 @@ class TestOUTransitionModel(unittest.TestCase):
         np.testing.assert_equal(len(self.model._log_sd), self.dim_x) 
         np.testing.assert_equal(len(self.model._log_obs_sd), self.dim_y) 
 
-    def test_sepcify_continuous_dynamic(self):
-        cov_mat, eig_val, eig_vector = self.model._sepcify_continuous_dynamic([
-            self.model._k_p, self.model._log_sd, self.model._transformed_corr,
+    def test_sepcify_continuous_covariance(self):
+        cov_mat = self.model._sepcify_continuous_covariance([
+            self.model._log_sd, self.model._transformed_corr,
         ])
         np.testing.assert_equal(cov_mat.shape, (self.dim_x, self.dim_x))
-        np.testing.assert_equal(len(eig_val), self.dim_x)
-        np.testing.assert_equal(eig_vector.shape, (self.dim_x, self.dim_x))
+        np.testing.assert_array_almost_equal(cov_mat, cov_mat.T)
         
     def test_sepcify_discrete_dynamic(self):
         self.model._log_obs_sd = np.zeros(self.dim_y)

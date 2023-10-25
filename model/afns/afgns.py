@@ -1,7 +1,6 @@
 from typing import Tuple, List
 import numpy as np
 
-import jax
 import jax.numpy as jnp
 
 from model.afns import adjustment
@@ -9,8 +8,10 @@ from utils import kalman_filter as kf
 from utils import nelson_siegel as ns
 
         
-class AFNS(kf.OUTransitionModel):
-    """Arbitrage-free Nelson-Siegel yield model from Christensen et al. (2011).
+class AFGNS(kf.OUTransitionModel):
+    """Arbitrage-free Generalized Nelson-Siegel yield model.
+    
+    This is the dependent 5-factor model from Christensen et al. (2011).
     """
     def __init__(
         self, 
@@ -26,6 +27,8 @@ class AFNS(kf.OUTransitionModel):
             All Time-to-maturity of interest.
         delta_t : float, optional
             Time span between two observations. The default is 1/250.
+        decay_rates : Tuple[float, float]
+            The two decay rates.
 
         Returns
         -------
@@ -33,7 +36,7 @@ class AFNS(kf.OUTransitionModel):
         """
         super().__init__(delta_t=delta_t)
         self.maturities = maturities
-        self._log_rates = np.log(decay_rates)
+        self._log_rates = np.log(np.array(decay_rates))
         self._log_obs_sd = np.zeros(len(maturities))
         
     def specify_adjustments(self) -> float:
@@ -42,11 +45,10 @@ class AFNS(kf.OUTransitionModel):
         Returns
         -------
         float
-            yield adjustment term.
-
+            Yield adjustment terms.
         """
         return self._specify_adjustments(
-            pars=[self._log_rates, self._k_p, self._log_sd, self._transformed_corr]
+            (self._log_rates, self._k_p, self._log_sd, self._transformed_corr)
         )
     
     def _specify_adjustments(self, pars: Tuple) -> float:
@@ -55,24 +57,18 @@ class AFNS(kf.OUTransitionModel):
         Returns
         -------
         float
-            yield adjustment term.
-
+            Yield adjustment terms.
         """
         log_rates, k_p, log_sd, transformed_corr = pars
         rates = jnp.exp(log_rates)
-        cov_mat, eig_val, eig_vector = super()._sepcify_continuous_dynamic([
-            k_p, log_sd, transformed_corr
-        ])
-        adjustments = np.zeros(len(self.maturities))
-        for idx, m in enumerate(self.maturities):
-            adjustment_mat = adjustment.adjustment_matrix(m, rates)
-            adjustments[idx] = jnp.sum(jnp.diag(
-                jnp.matmul(cov_mat, -adjustment_mat)
-            ))
-            
-        return adjustments
+        cov_mat = super()._sepcify_continuous_covariance((
+            log_sd, transformed_corr
+        ))
+        fn = lambda m: jnp.sum(jnp.diag(
+            jnp.matmul(cov_mat, -adjustment.adjustment_matrix(m, rates))
+        ))
+        return jnp.array([fn(m) for m in self.maturities])
         
-    
     def specify_filter(self) -> kf.BaseLGSSM:
         """Specify the LGSSM given the parameter values. 
 
@@ -100,12 +96,12 @@ class AFNS(kf.OUTransitionModel):
             The LGSSM. 
         """
         log_rates, k_p, theta_p, log_sd, transformed_corr, log_obs_sd = pars
-        (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0) = super()._sepcify_discrete_dynamic([
-            k_p, theta_p, log_sd, transformed_corr, log_obs_sd
-        ])
+        (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0) = super()._sepcify_discrete_dynamic(
+            (k_p, theta_p, log_sd, transformed_corr, log_obs_sd)
+        )
         
         hat_B = self._specify_adjustments(
-            [log_rates, k_p, log_sd, transformed_corr]
+            (log_rates, k_p, log_sd, transformed_corr)
         )
         hat_H = jnp.array([ns.yield_basis(jnp.exp(log_rates), m) 
                            for m in self.maturities])
@@ -138,7 +134,10 @@ class AFNS(kf.OUTransitionModel):
     ) -> None:
         """Perform inference on df.
         
-        Update parameters using Adam optimizer on -ve log-likelihood.
+        Update parameters using Adam optimizer on penalized negative 
+        log-likelihood. The penalty increases as two decay rates approaches to
+        one another. Also, jnp.nn.relu is used to ensure the loss is 
+        differentiable everywhere.
 
         Parameters
         ----------
@@ -153,10 +152,10 @@ class AFNS(kf.OUTransitionModel):
         -------
         None
         """
-        @jax.jit
         def neg_log_like(pars, df):
             model = self._specify_filter(pars)
-            return -jnp.mean(model.forward_filter(df)[2])
+            # penalty = 1e+6 * jax.nn.relu(0.1 - jnp.abs(pars[0] - pars[1]))
+            return -jnp.mean(model.forward_filter(df)[2]) #+ penalty
         
         if not initialized:
             self.initialize(df)
