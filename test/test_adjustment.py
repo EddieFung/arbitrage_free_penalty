@@ -133,6 +133,25 @@ class TestAdjustment(unittest.TestCase):
             -ans,
             6
         )
+        
+    def test_dependent_3_factor(self):
+        """Compare adjustment terms in the dependent 5-factor case.
+        """
+        sqrt_mat = np.random.uniform(0.01, 0.03, [3, 3])
+        cov_mat = jnp.matmul(sqrt_mat, sqrt_mat.T)
+        ans = exact_A(self.m, self.rates) * cov_mat[0, 0] + \
+            exact_B(self.m, self.rates) * cov_mat[1, 1] + \
+            exact_D(self.m, self.rates) * cov_mat[2, 2] + \
+            exact_F(self.m, self.rates) * cov_mat[0, 1] + \
+            exact_H(self.m, self.rates) * cov_mat[0, 2] + \
+            exact_K(self.m, self.rates) * cov_mat[1, 2] 
+
+        mat = adjustment.smaller_adjustment_matrix(self.m, self.rates[0])
+        self.assertAlmostEqual(
+            jnp.sum(jnp.diag(jnp.matmul(cov_mat, -mat))),
+            -ans,
+            6
+        )
 
     def test_independent_5_factor(self):
         """Compare adjustment terms in the independent 5-factor case.

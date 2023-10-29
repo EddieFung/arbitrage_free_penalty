@@ -7,7 +7,7 @@ import jax.numpy as jnp
 def adjustment_matrix(m: float, rates: np.array) -> np.ndarray:
     """Matrix for yield adjustment term.
     
-    In the 5-factor AFNS model, the yield adjustment term (intercept) equals:
+    In the 5-factor AFGNS model, the yield adjustment term (intercept) equals:
     -tr[Covariance matrix @ -this matrix]
 
     Parameters
@@ -43,6 +43,34 @@ def adjustment_matrix(m: float, rates: np.array) -> np.ndarray:
         [fn_2(m, rates[1]), 
          fn_5(m, rates), fn_5(m, rates_3),
          fn_4(m, rates), fn_4(m, rates_3)]
+    ])
+
+def smaller_adjustment_matrix(m: float, rate: float) -> np.ndarray:
+    """Matrix for yield adjustment term.
+    
+    In the 3-factor AFNS model, the yield adjustment term (intercept) equals:
+    -tr[Covariance matrix @ -this matrix]
+
+    Parameters
+    ----------
+    m : float
+        Time-to-maturity.
+    rate : float
+        The decay rates.
+
+    Returns
+    -------
+    np.ndarray
+        adjustment matrix, shape = [5, 5].
+    """
+    if m == 0:
+        return jnp.zeros([5, 5])
+    
+    rates = jnp.repeat(rate, 2)
+    return jnp.array([
+        [m**2 / 6, fn_1(m, rate), fn_2(m, rate)],
+        [fn_1(m, rate), fn_3(m, rates), fn_5(m, rates)],
+        [fn_2(m, rate), fn_5(m, rates), fn_4(m, rates)]
     ])
 
 @jax.jit
