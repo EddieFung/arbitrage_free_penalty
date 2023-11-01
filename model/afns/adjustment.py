@@ -61,10 +61,10 @@ def smaller_adjustment_matrix(m: float, rate: float) -> np.ndarray:
     Returns
     -------
     np.ndarray
-        adjustment matrix, shape = [5, 5].
+        adjustment matrix, shape = [3, 3].
     """
     if m == 0:
-        return jnp.zeros([5, 5])
+        return jnp.zeros([3, 3])
     
     rates = jnp.repeat(rate, 2)
     return jnp.array([

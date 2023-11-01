@@ -8,10 +8,10 @@ from utils import kalman_filter as kf
 from utils import nelson_siegel as ns
 
     
-class AFIGNS(kf.OUTransitionModel):
-    """Arbitrage-free Independent Generalized Nelson-Siegel yield model.
+class AFGNS(kf.OUTransitionModel):
+    """Arbitrage-free dependent Generalized Nelson-Siegel yield model.
     
-    This is the independent 5-factor model from Christensen et al. (2011).
+    This is the dependent 5-factor model from Christensen et al. (2011).
     """
     def __init__(
         self, 
@@ -52,9 +52,11 @@ class AFIGNS(kf.OUTransitionModel):
         float
             Yield adjustment terms.
         """
-        cov_mat = super()._independent_continuous_covariance(self._log_sd)
+        cov_mat = super()._dependent_continuous_covariance(
+            self._log_sd, self._transformed_corr
+        )
         return self._specify_adjustments(cov_mat, (self._log_rates, self._k_p))
-    
+        
     def _specify_adjustments(self, cov_mat: np.ndarray, pars: Tuple) -> float:
         """Hidden method to specify the yield adjustment term of AFNS.
 
@@ -94,7 +96,7 @@ class AFIGNS(kf.OUTransitionModel):
         """
         return self._specify_filter([
             self._log_rates, self._k_p, self._theta_p, self._log_sd, 
-            self._log_obs_sd
+            self._transformed_corr, self._log_obs_sd
         ])
         
     def _specify_filter(self, pars: Tuple) -> kf.BaseLGSSM:
@@ -110,8 +112,10 @@ class AFIGNS(kf.OUTransitionModel):
         kf.BaseLGSSM
             The LGSSM. 
         """
-        log_rates, k_p, theta_p, log_sd, log_obs_sd = pars
-        cov_mat = super()._independent_continuous_covariance(log_sd)
+        log_rates, k_p, theta_p, log_sd, transformed_corr, log_obs_sd = pars
+        cov_mat = super()._dependent_continuous_covariance(
+            log_sd, transformed_corr
+        )
         (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0) = super()._discrete_components(
             cov_mat, (k_p, theta_p, log_obs_sd)
         )
@@ -171,17 +175,17 @@ class AFIGNS(kf.OUTransitionModel):
         
         if not initialized:
             self.initialize(df)
-        pars = [self._log_rates, self._k_p, self._theta_p, self._log_sd, 
-                self._log_obs_sd]
+        pars = (self._log_rates, self._k_p, self._theta_p, self._log_sd, 
+                self._transformed_corr, self._log_obs_sd)
         pars = super()._inference(pars, df, neg_log_like, iterations)
-        [self._log_rates, self._k_p, self._theta_p, self._log_sd, 
-         self._log_obs_sd] = pars
+        (self._log_rates, self._k_p, self._theta_p, self._log_sd, 
+         self._transformed_corr, self._log_obs_sd) = pars
 
 
-class AFGNS(AFIGNS):
-    """Arbitrage-free Generalized Nelson-Siegel yield model.
+class AFIGNS(AFGNS):
+    """Arbitrage-free Independent Generalized Nelson-Siegel yield model.
     
-    This is the dependent 5-factor model from Christensen et al. (2011).
+    This is the independent 5-factor model from Christensen et al. (2011).
     """
     def __init__(
         self, 
@@ -209,6 +213,7 @@ class AFGNS(AFIGNS):
             delta_t=delta_t, 
             decay_rates=decay_rates
         )
+        self._k_p_diag = jnp.diag(self._k_p)
         
     def specify_adjustments(self) -> float:
         """Specify the yield adjustment term of AFNS.
@@ -218,12 +223,10 @@ class AFGNS(AFIGNS):
         float
             Yield adjustment terms.
         """
-        
-        cov_mat = super()._dependent_continuous_covariance(
-            self._log_sd, self._transformed_corr
-        )
-        return self._specify_adjustments(cov_mat, (self._log_rates, self._k_p))
-        
+        k_p = jnp.diag(self._k_p_diag)
+        cov_mat = super()._independent_continuous_covariance(self._log_sd)
+        return self._specify_adjustments(cov_mat, (self._log_rates, k_p))
+    
     def specify_filter(self) -> kf.BaseLGSSM:
         """Specify the LGSSM given the parameter values. 
 
@@ -233,8 +236,8 @@ class AFGNS(AFIGNS):
             The LGSSM. 
         """
         return self._specify_filter([
-            self._log_rates, self._k_p, self._theta_p, self._log_sd, 
-            self._transformed_corr, self._log_obs_sd
+            self._log_rates, self._k_p_diag, self._theta_p, self._log_sd, 
+            self._log_obs_sd
         ])
         
     def _specify_filter(self, pars: Tuple) -> kf.BaseLGSSM:
@@ -250,10 +253,9 @@ class AFGNS(AFIGNS):
         kf.BaseLGSSM
             The LGSSM. 
         """
-        log_rates, k_p, theta_p, log_sd, transformed_corr, log_obs_sd = pars
-        cov_mat = super()._dependent_continuous_covariance(
-            log_sd, transformed_corr
-        )
+        log_rates, k_p_diag, theta_p, log_sd, log_obs_sd = pars
+        k_p = jnp.diag(k_p_diag)
+        cov_mat = super()._independent_continuous_covariance(log_sd)
         (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0) = super()._discrete_components(
             cov_mat, (k_p, theta_p, log_obs_sd)
         )
@@ -263,6 +265,21 @@ class AFGNS(AFIGNS):
         return kf.BaseLGSSM(
             hat_A, hat_F, hat_Q, hat_B, hat_H, hat_R, hat_m0, hat_P0
         )
+
+    def initialize(self, df: np.ndarray) -> None:
+        """Initialize parameters given df.
+
+        Parameters
+        ----------
+        df : np.ndarray
+            Data, shape = [dim_t, dim_y]
+
+        Returns
+        -------
+        None
+        """
+        super().initialize(df)
+        self._k_p_diag = jnp.diag(self._k_p)
 
     def inference(
         self, 
@@ -297,8 +314,8 @@ class AFGNS(AFIGNS):
         
         if not initialized:
             self.initialize(df)
-        pars = (self._log_rates, self._k_p, self._theta_p, self._log_sd, 
-                self._transformed_corr, self._log_obs_sd)
+        pars = (self._log_rates, self._k_p_diag, self._theta_p, self._log_sd, 
+                self._log_obs_sd)
         pars = super()._inference(pars, df, neg_log_like, iterations)
-        (self._log_rates, self._k_p, self._theta_p, self._log_sd, 
-         self._transformed_corr, self._log_obs_sd) = pars
+        (self._log_rates, self._k_p_diag, self._theta_p, self._log_sd, 
+         self._log_obs_sd) = pars

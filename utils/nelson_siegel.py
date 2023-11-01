@@ -25,7 +25,9 @@ def three_yield_basis(decay_rate: float, maturity: float) -> np.array:
     return jnp.array([
         1,
         (1. - jnp.exp(-decay_rate * maturity)) / decay_rate / maturity,
-        (1. - jnp.exp(-decay_rate * maturity)) / decay_rate / maturity
+        - jnp.exp(-decay_rate * maturity) + \
+        (1. - jnp.exp(-decay_rate * maturity)) / decay_rate / maturity,
+        
     ])
         
 def yield_basis(decay_rates: Tuple[float, float], maturity: float) -> np.array:

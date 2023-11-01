@@ -5,7 +5,7 @@ from model.afns import afgns
 from utils import kalman_filter as kf
 
 
-class TestAFIGNS(unittest.TestCase):
+class TestAFGNS(unittest.TestCase):
     
     @classmethod
     def setUpClass(cls):
@@ -15,7 +15,7 @@ class TestAFIGNS(unittest.TestCase):
         cls.dim_y = len(cls.maturities)
         cls.dim_x = 5
         
-        cls.model = afgns.AFIGNS(cls.maturities)     
+        cls.model = afgns.AFGNS(cls.maturities)     
         
     def test_type(self):
         isinstance(self.model.specify_filter(), kf.BaseLGSSM)
@@ -47,7 +47,7 @@ class TestAFIGNS(unittest.TestCase):
         np.testing.assert_equal(H.shape, (self.dim_y, self.dim_x))
 
 
-class TestAFGNS(unittest.TestCase):
+class TestAFIGNS(unittest.TestCase):
     
     @classmethod
     def setUpClass(cls):
@@ -57,7 +57,7 @@ class TestAFGNS(unittest.TestCase):
         cls.dim_y = len(cls.maturities)
         cls.dim_x = 5
         
-        cls.model = afgns.AFGNS(cls.maturities)     
+        cls.model = afgns.AFIGNS(cls.maturities)     
         
     def test_type(self):
         isinstance(self.model.specify_filter(), kf.BaseLGSSM)
@@ -67,6 +67,17 @@ class TestAFGNS(unittest.TestCase):
         np.testing.assert_array_less(
             adjustments, np.zeros(self.dim_y)
         )
+        
+    def test_initialize(self):
+        np.random.seed(3)
+        
+        df = np.random.normal(size=(10, self.dim_y))
+        self.model.initialize(df)
+        
+        np.testing.assert_equal(len(self.model._k_p_diag), self.dim_x) 
+        np.testing.assert_equal(len(self.model._theta_p), self.dim_x) 
+        np.testing.assert_equal(len(self.model._log_sd), self.dim_x) 
+        np.testing.assert_equal(len(self.model._log_obs_sd), self.dim_y) 
         
 if __name__ == '__main__':
     unittest.main()

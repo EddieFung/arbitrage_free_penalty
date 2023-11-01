@@ -1,11 +1,13 @@
 import numpy as np
 import unittest
 
+import jax.numpy as jnp
+
 from model.afns import afns
 from utils import kalman_filter as kf
 
 
-class TestAFINS(unittest.TestCase):
+class TestAFNS(unittest.TestCase):
     
     @classmethod
     def setUpClass(cls):
@@ -15,7 +17,7 @@ class TestAFINS(unittest.TestCase):
         cls.dim_y = len(cls.maturities)
         cls.dim_x = 3
         
-        cls.model = afns.AFINS(cls.maturities)     
+        cls.model = afns.AFNS(cls.maturities)     
         
     def test_type(self):
         isinstance(self.model.specify_filter(), kf.BaseLGSSM)
@@ -40,14 +42,14 @@ class TestAFINS(unittest.TestCase):
     def test_observation_components(self):
         cov_mat = self.model._independent_continuous_covariance(self.model._log_sd)
         B, H = self.model._observation_components(
-            cov_mat, (self.model._log_rate, self.model._k_p)
+            cov_mat, jnp.exp(self.model._log_rate)
         )
         
         np.testing.assert_equal(len(B), self.dim_y)
         np.testing.assert_equal(H.shape, (self.dim_y, self.dim_x))
       
 
-class TestAFNS(unittest.TestCase):
+class TestAFINS(unittest.TestCase):
     
     @classmethod
     def setUpClass(cls):
@@ -57,7 +59,7 @@ class TestAFNS(unittest.TestCase):
         cls.dim_y = len(cls.maturities)
         cls.dim_x = 3
         
-        cls.model = afns.AFNS(cls.maturities)     
+        cls.model = afns.AFINS(cls.maturities)     
         
     def test_type(self):
         isinstance(self.model.specify_filter(), kf.BaseLGSSM)
@@ -68,6 +70,17 @@ class TestAFNS(unittest.TestCase):
             adjustments, np.zeros(self.dim_y)
         )
 
+    def test_initialize(self):
+        np.random.seed(3)
+        
+        df = np.random.normal(size=(10, self.dim_y))
+        self.model.initialize(df)
+        
+        np.testing.assert_equal(len(self.model._k_p_diag), self.dim_x) 
+        np.testing.assert_equal(len(self.model._theta_p), self.dim_x) 
+        np.testing.assert_equal(len(self.model._log_sd), self.dim_x) 
+        np.testing.assert_equal(len(self.model._log_obs_sd), self.dim_y) 
+        
 
 if __name__ == '__main__':
     unittest.main()
