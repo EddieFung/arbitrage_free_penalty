@@ -27,7 +27,7 @@ class AFNS(kf.OUTransitionModel):
             All Time-to-maturity of interest.
         delta_t : float, optional
             Time span between two observations. The default is 1/250.
-        decay_rates : float
+        decay_rate : float
             The decay rate.
 
         Returns
@@ -57,19 +57,19 @@ class AFNS(kf.OUTransitionModel):
         )
         return self._specify_adjustments(cov_mat, jnp.exp(self._log_rate))
     
-    def _specify_adjustments(self, cov_mat: np.ndarray, decay_rate: float) -> float:
+    def _specify_adjustments(self, cov_mat: np.ndarray, decay_rate: float) -> np.array:
         """Hidden method to specify the yield adjustment term of AFNS.
 
         Parameters
         ----------
         cov_mat: np.ndarray
             Continuous-time covariance matrix, shape = [dim_x, dim_x].
-        decay_rate : float
+        decay_rate: float
             The decay rate.
 
         Returns
         -------
-        float
+        np.array
             Yield adjustment terms.
         """
         vectorize_adjustment = lambda m: jnp.sum(jnp.diag(
@@ -78,6 +78,21 @@ class AFNS(kf.OUTransitionModel):
         return jnp.array([vectorize_adjustment(m) for m in self.maturities])
     
     def _observation_components(self, cov_mat: np.ndarray, decay_rate: float) -> Tuple:
+        """Hidden method to specify the observation intercepts and matrix.
+
+        Parameters
+        ----------
+        cov_mat : np.ndarray
+            Continuous-time covariance matrix, shape = [dim_x, dim_x].
+        decay_rate : float
+            The decay rate.
+
+        Returns
+        -------
+        Tuple
+            Observation intercept, shape = [dim_y],
+            Observation matrix, shape = [dim_y, dim_x].
+        """
         hat_B = self._specify_adjustments(cov_mat, decay_rate)
         hat_H = jnp.array([ns.three_yield_basis(decay_rate, m) 
                            for m in self.maturities])
@@ -207,7 +222,7 @@ class AFINS(AFNS):
             delta_t=delta_t,
             decay_rate=decay_rate
         )
-        self._k_p_diag = jnp.diag(self._k_p)
+        self._log_k_p_diag = jnp.log(jnp.diag(self._k_p))
         
     def specify_adjustments(self) -> float:
         """Specify the yield adjustment term of AFNS.
@@ -234,7 +249,7 @@ class AFINS(AFNS):
             The LGSSM. 
         """
         return self._specify_filter((
-            self._log_rate, self._k_p_diag, self._theta_p, self._log_sd, 
+            self._log_rate, self._log_k_p_diag, self._theta_p, self._log_sd, 
             self._log_obs_sd
         ))
         
@@ -251,8 +266,8 @@ class AFINS(AFNS):
         kf.BaseLGSSM
             The LGSSM. 
         """
-        log_rate, k_p_diag, theta_p, log_sd, log_obs_sd = pars
-        k_p = jnp.diag(k_p_diag)
+        log_rate, log_k_p_diag, theta_p, log_sd, log_obs_sd = pars
+        k_p = jnp.diag(jnp.exp(log_k_p_diag))
         cov_mat = super()._independent_continuous_covariance(log_sd)
         (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0) = super()._discrete_components(
             cov_mat, (k_p, theta_p, log_obs_sd)
@@ -277,7 +292,7 @@ class AFINS(AFNS):
         None
         """
         super().initialize(df)
-        self._k_p_diag = jnp.diag(self._k_p)
+        self._log_k_p_diag = jnp.log(jnp.diag(self._k_p))
         
     def inference(
         self, 
@@ -309,8 +324,8 @@ class AFINS(AFNS):
         
         if not initialized:
             self.initialize(df)
-        pars = (self._log_rate, self._k_p_diag, self._theta_p, self._log_sd, 
+        pars = (self._log_rate, self._log_k_p_diag, self._theta_p, self._log_sd, 
                 self._log_obs_sd)
         pars = super()._inference(pars, df, neg_log_like, iterations)
-        (self._log_rate, self._k_p_diag, self._theta_p, self._log_sd, 
+        (self._log_rate, self._log_k_p_diag, self._theta_p, self._log_sd, 
          self._log_obs_sd) = pars

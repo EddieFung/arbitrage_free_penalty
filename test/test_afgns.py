@@ -40,7 +40,7 @@ class TestAFGNS(unittest.TestCase):
     def test_observation_components(self):
         cov_mat = self.model._independent_continuous_covariance(self.model._log_sd)
         B, H = self.model._observation_components(
-            cov_mat, (self.model._log_rates, self.model._k_p)
+            cov_mat, np.exp(self.model._log_rates)
         )
         
         np.testing.assert_equal(len(B), self.dim_y)
