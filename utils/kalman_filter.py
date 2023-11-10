@@ -222,7 +222,9 @@ class OUTransitionModel:
         covariance matrix are specified. Observation intercept and matrix are 
         left unspecified.
         
-        hat_Q is approximated using trapezoid rule.
+        hat_Q is approximated using trapezoid rule. hat_P0 is very roughly
+        approximated by 9 * hat_Q. The correct value of hat_P0 is very likely
+        to be in [9, 100] * hat_Q.
         
         Parameters
         ----------
@@ -247,7 +249,7 @@ class OUTransitionModel:
         hat_m0 = theta_p
         
         hat_Q = (self.delta_t / 2.) * (cov_mat + hat_F @ cov_mat @ hat_F.T)    
-        hat_P0 = hat_Q * 2.
+        hat_P0 = hat_Q * 9.
         
         return (hat_A, hat_F, hat_Q), hat_R, (hat_m0, hat_P0)
     

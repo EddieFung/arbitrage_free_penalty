@@ -290,7 +290,7 @@ class AFIGNS(AFGNS):
         None
         """
         super().initialize(df)
-        self._k_p_diag = jnp.diag(self._k_p)
+        self._log_k_p_diag = jnp.log(jnp.diag(self._k_p))
 
     def inference(
         self, 
@@ -325,8 +325,8 @@ class AFIGNS(AFGNS):
         
         if not initialized:
             self.initialize(df)
-        pars = (self._log_rates, self._k_p_diag, self._theta_p, self._log_sd, 
+        pars = (self._log_rates, self._log_k_p_diag, self._theta_p, self._log_sd, 
                 self._log_obs_sd)
         pars = super()._inference(pars, df, neg_log_like, iterations)
-        (self._log_rates, self._k_p_diag, self._theta_p, self._log_sd, 
+        (self._log_rates, self._log_k_p_diag, self._theta_p, self._log_sd, 
          self._log_obs_sd) = pars

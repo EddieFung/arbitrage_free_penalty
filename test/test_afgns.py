@@ -74,7 +74,7 @@ class TestAFIGNS(unittest.TestCase):
         df = np.random.normal(size=(10, self.dim_y))
         self.model.initialize(df)
         
-        np.testing.assert_equal(len(self.model._k_p_diag), self.dim_x) 
+        np.testing.assert_equal(len(self.model._log_k_p_diag), self.dim_x) 
         np.testing.assert_equal(len(self.model._theta_p), self.dim_x) 
         np.testing.assert_equal(len(self.model._log_sd), self.dim_x) 
         np.testing.assert_equal(len(self.model._log_obs_sd), self.dim_y) 
